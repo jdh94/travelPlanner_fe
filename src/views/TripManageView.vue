@@ -1,0 +1,351 @@
+<script setup lang="ts">
+// ref: リアクティブな値を作る Vue の関数。
+// .value でアクセス・更新し、変化するとテンプレートが自動再描画される。
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { tripsApi, type Trip } from '@/api/trips'
+import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+// route.params: URLの :hashUrl に対応する値が入っている。
+const hashUrl = route.params.hashUrl as string
+
+const trip = ref<Trip | null>(null)
+const loading = ref(true)
+const saving = ref(false)
+const saveSuccess = ref(false)
+
+// フォームの状態を1つの ref オブジェクトにまとめる。
+// v-model でテンプレートの各入力欄とこのオブジェクトが双方向バインドされる。
+const form = ref({
+  title: '',
+  description: '',
+  start_date: '',
+  end_date: '',
+  currency: 'JPY',
+  visibility: 'public',
+  pin_enabled: false,
+  pin: '',
+})
+const showPinSaved = ref(false)
+
+// computed: trip と auth.user の両方が揃っていて、かつ creator が一致する場合に true。
+// trip や auth.user が変わると自動で再計算される。
+const isCreator = computed(() =>
+  trip.value && auth.user && trip.value.creator === auth.user.id
+)
+
+// onMounted: コンポーネントが画面に表示された直後に実行される。
+// 旅行データを取得してフォームの初期値をセットする。
+onMounted(async () => {
+  try {
+    const { data } = await tripsApi.get(hashUrl)
+    trip.value = data
+    // フォームを API から取得したデータで初期化する。
+    form.value = {
+      title: data.title,
+      description: data.description,
+      start_date: data.start_date,
+      end_date: data.end_date,
+      currency: data.currency,
+      visibility: data.visibility,
+      pin_enabled: data.pin_enabled,
+      pin: '',
+    }
+  } finally {
+    loading.value = false
+  }
+})
+
+async function saveTrip() {
+  saving.value = true
+  saveSuccess.value = false
+  try {
+    // スプレッド構文 {...form.value}: form の全フィールドをコピーした新しいオブジェクトを作る。
+    // 直接 form.value を渡すと後の pin 操作で元のオブジェクトが変わってしまう。
+    const payload: Record<string, unknown> = { ...form.value }
+    if (!form.value.pin_enabled) {
+      // PIN無効化の場合は空文字を送ってDBのPINをクリアする。
+      payload.pin = ''
+    } else if (!form.value.pin) {
+      // PINを変更しない場合は pin フィールド自体を送らない。
+      // DRF 側で required=False なので省略してもエラーにならない。
+      delete payload.pin
+    }
+    // PATCH リクエスト: 変更したフィールドだけを送る部分更新。
+    const { data } = await tripsApi.update(hashUrl, payload)
+    trip.value = data
+    saveSuccess.value = true
+    if (form.value.pin_enabled && form.value.pin) {
+      // PIN設定完了トースト通知を4秒間表示する。
+      showPinSaved.value = true
+      // setTimeout: 指定ミリ秒後に処理を実行する非同期タイマー。
+      setTimeout(() => (showPinSaved.value = false), 4000)
+    }
+    form.value.pin = ''
+    setTimeout(() => (saveSuccess.value = false), 3000)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteTrip() {
+  if (!confirm('この旅行を削除しますか？この操作は元に戻せません。')) return
+  try {
+    await tripsApi.delete(hashUrl)
+    // 削除後はトップページへ遷移する。
+    router.push('/')
+  } catch (e: any) {
+    alert(e.response?.data?.detail || '削除に失敗しました。')
+  }
+}
+</script>
+
+<template>
+  <div class="manage-page">
+    <header class="header">
+      <RouterLink :to="`/trips/${hashUrl}`" class="back-btn">← 旅行に戻る</RouterLink>
+      <h1>旅行管理</h1>
+    </header>
+
+    <!--
+      <transition>: 要素の表示・非表示にアニメーションを付ける Vue の組み込みコンポーネント。
+      name="toast" → CSS の .toast-enter-active / .toast-leave-active 等が適用される。
+    -->
+    <transition name="toast">
+      <!-- v-if="showPinSaved": true のとき DOM に追加、false のとき削除。transition が動く。 -->
+      <div v-if="showPinSaved" class="toast">
+        🔒 PINを設定しました。次回からこのURLを開く時にPIN入力が必要です。
+      </div>
+    </transition>
+
+    <div v-if="loading" class="loading">読み込み中...</div>
+
+    <div v-else class="content">
+      <div class="card">
+        <h2>旅行情報を編集</h2>
+        <!--
+          @submit.prevent: フォームの送信イベントをキャッチして saveTrip() を呼ぶ。
+          .prevent: event.preventDefault() と同等。ページリロードを防ぐ。
+        -->
+        <form @submit.prevent="saveTrip">
+          <div class="field">
+            <label>旅行タイトル *</label>
+            <!-- v-model="form.title": 入力するたびに form.title が更新される（双方向バインド）。 -->
+            <input v-model="form.title" type="text" required placeholder="例：京都・大阪旅行" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>出発日 *</label>
+              <input v-model="form.start_date" type="date" required />
+            </div>
+            <div class="field">
+              <label>帰宅日 *</label>
+              <input v-model="form.end_date" type="date" required />
+            </div>
+          </div>
+          <div class="field">
+            <label>説明</label>
+            <textarea v-model="form.description" rows="3" placeholder="旅行の概要..."></textarea>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>通貨</label>
+              <select v-model="form.currency">
+                <option value="JPY">JPY（円）</option>
+                <option value="KRW">KRW（ウォン）</option>
+                <option value="USD">USD（ドル）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>公開設定</label>
+              <select v-model="form.visibility">
+                <option value="public">公開</option>
+                <option value="friends">友達のみ</option>
+                <option value="private">非公開</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field pin-field">
+            <label>PIN保護</label>
+            <div class="pin-toggle-row">
+              <!--
+                type="button": submit ではなくボタンとして動作させる。
+                type 未指定だと form 内でデフォルトが submit になり、クリックでフォームが送信されてしまう。
+                :class="{ active: form.pin_enabled }": pin_enabled が true のとき active クラスを付与。
+              -->
+              <button
+                type="button"
+                class="pin-toggle"
+                :class="{ active: form.pin_enabled }"
+                @click="form.pin_enabled = !form.pin_enabled"
+              >
+                {{ form.pin_enabled ? '🔒 PIN有効' : '🔓 PIN無効' }}
+              </button>
+              <span class="pin-hint">ONにすると旅行を開く時にPINが必要になります</span>
+            </div>
+            <!-- v-if="form.pin_enabled": PIN有効のときだけ入力欄を表示する。 -->
+            <div v-if="form.pin_enabled" class="pin-input-row">
+              <input
+                v-model="form.pin"
+                type="tel"
+                inputmode="numeric"
+                maxlength="4"
+                placeholder="4桁のPINを入力"
+                class="pin-number-input"
+                <!-- @input: 入力のたびに数字以外を除去して4桁に制限する。 -->
+                @input="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
+              />
+              <span class="pin-input-hint">空欄の場合は現在のPINを維持</span>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span v-if="saveSuccess" class="save-success">✓ 保存しました</span>
+            <!-- :disabled="saving": saving が true のときボタンを無効化して二重送信を防ぐ。 -->
+            <button type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? '保存中...' : '変更を保存' }}
+            </button>
+          </div>
+        </form>
+
+        <!-- v-if="isCreator": computed の isCreator が true（作成者本人）のときだけ表示する。 -->
+        <div v-if="isCreator" class="danger-zone">
+          <h3>危険な操作</h3>
+          <p>旅行を削除すると、すべてのスポット・コメントも削除されます。この操作は元に戻せません。</p>
+          <button class="btn-danger" @click="deleteTrip">この旅行を削除する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.manage-page { min-height: 100vh; background: #f5f7fa; }
+
+.header {
+  background: #fff;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.back-btn { color: #42b983; text-decoration: none; font-size: 0.9rem; white-space: nowrap; }
+h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
+
+.loading { text-align: center; padding: 60px; color: #888; }
+
+.content { max-width: 680px; margin: 0 auto; padding: 24px 20px; }
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.card h2 { margin: 0 0 20px; font-size: 1.1rem; color: #2c3e50; }
+
+.field { margin-bottom: 16px; }
+.field-row { display: flex; gap: 14px; }
+.field-row .field { flex: 1; }
+label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+input[type="text"], input[type="date"], textarea, select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+input:focus, textarea:focus, select:focus { outline: none; border-color: #42b983; }
+
+.form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+.save-success { color: #42b983; font-size: 0.9rem; }
+
+.danger-zone {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #ffd0d0;
+}
+.danger-zone h3 { color: #e74c3c; margin: 0 0 8px; font-size: 0.95rem; }
+.danger-zone p { font-size: 0.85rem; color: #888; margin-bottom: 14px; }
+.btn-danger {
+  background: #fff;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+  padding: 9px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.15s;
+}
+.btn-danger:hover { background: #e74c3c; color: #fff; }
+
+.btn-primary {
+  background: #42b983;
+  color: #fff;
+  border: none;
+  padding: 9px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.btn-primary:hover { background: #369870; }
+.btn-primary:disabled { background: #a0d9bf; cursor: not-allowed; }
+
+.pin-field { border: 1px solid #e0e0e0; border-radius: 10px; padding: 14px 16px; background: #fafafa; }
+.pin-toggle-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pin-toggle {
+  padding: 8px 18px;
+  border-radius: 20px;
+  border: 2px solid #ddd;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: #888;
+  transition: all 0.2s;
+}
+.pin-toggle.active { border-color: #42b983; background: #e8f5e9; color: #42b983; }
+.pin-hint { font-size: 0.8rem; color: #aaa; }
+.pin-input-row { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pin-number-input {
+  width: 160px;
+  padding: 10px 14px;
+  border: 1.5px solid #42b983;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+.pin-input-hint { font-size: 0.78rem; color: #aaa; }
+
+/* transition の name="toast" に対応する CSS クラス。
+   Vue が自動で付与する: enter-active（表示アニメーション中）、leave-active（消えるアニメーション中）等。 */
+.toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2c3e50;
+  color: #fff;
+  padding: 14px 24px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  z-index: 999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  max-width: 420px;
+  text-align: center;
+}
+.toast-enter-active, .toast-leave-active { transition: all 0.3s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(-16px); }
+
+@media (max-width: 600px) {
+  .field-row { flex-direction: column; gap: 0; }
+}
+</style>

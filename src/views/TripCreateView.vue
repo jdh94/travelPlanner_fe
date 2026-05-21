@@ -1,0 +1,436 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTripsStore } from '@/stores/trips'
+import { useAuthStore } from '@/stores/auth'
+
+const router = useRouter()
+const tripsStore = useTripsStore()
+const auth = useAuthStore()
+
+const step = ref(1)
+const creating = ref(false)
+const error = ref('')
+
+const form = ref({
+  title: '',
+  start_date: '',
+  end_date: '',
+  description: '',
+  currency: 'JPY',
+  visibility: 'public',
+})
+
+const today = new Date().toISOString().split('T')[0]
+
+const nightCount = computed(() => {
+  if (!form.value.start_date || !form.value.end_date) return 0
+  const diff = new Date(form.value.end_date).getTime() - new Date(form.value.start_date).getTime()
+  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
+})
+
+const step1Valid = computed(() => !!form.value.title.trim())
+const step2Valid = computed(() => !!form.value.start_date && !!form.value.end_date && form.value.end_date >= form.value.start_date)
+
+function nextStep() {
+  if (step.value === 1 && step1Valid.value) step.value = 2
+  else if (step.value === 2 && step2Valid.value) step.value = 3
+}
+
+function prevStep() {
+  if (step.value > 1) step.value--
+}
+
+async function submit() {
+  error.value = ''
+  creating.value = true
+  try {
+    const trip = await tripsStore.createTrip(form.value)
+    router.push(`/trips/${trip.hash_url}`)
+  } catch (e: any) {
+    const data = e.response?.data
+    if (data && typeof data === 'object') {
+      const entries = Object.keys(data).map((field: string) => {
+        const msgs: unknown = (data as Record<string, unknown>)[field]
+        return `${field}: ${Array.isArray(msgs) ? (msgs as string[]).join(', ') : String(msgs)}`
+      })
+      error.value = entries.length ? entries.join(' / ') : '旅行の作成に失敗しました。'
+    } else {
+      error.value = '旅行の作成に失敗しました。'
+    }
+    creating.value = false
+  }
+}
+
+const currencySymbol: Record<string, string> = { JPY: '¥', KRW: '₩', USD: '$' }
+const visibilityDesc: Record<string, string> = {
+  public: '誰でもURLでアクセス可能',
+  friends: '参加メンバーのみ',
+  private: '非公開（URLシェアは有効）',
+}
+</script>
+
+<template>
+  <div class="create-page">
+    <header class="header">
+      <button class="back-btn" @click="router.push('/')">← 戻る</button>
+      <h1>新しい旅行を作成</h1>
+    </header>
+
+    <div class="content">
+      <!-- ステップインジケーター -->
+      <div class="steps">
+        <div v-for="n in 3" :key="n" class="step-item">
+          <div class="step-circle" :class="{ active: step === n, done: step > n }">
+            <span v-if="step > n">✓</span>
+            <span v-else>{{ n }}</span>
+          </div>
+          <span class="step-label">
+            {{ n === 1 ? '基本情報' : n === 2 ? '日程' : '設定' }}
+          </span>
+        </div>
+        <div class="step-line"></div>
+      </div>
+
+      <div class="card">
+        <!-- Step 1：基本情報 -->
+        <div v-if="step === 1">
+          <h2>旅行のタイトルを決めましょう</h2>
+          <p class="step-desc">旅行を分かりやすく表す名前をつけてください。</p>
+          <div class="field">
+            <label>旅行タイトル *</label>
+            <input
+              v-model="form.title"
+              type="text"
+              placeholder="例：京都・大阪2泊3日の旅"
+              maxlength="100"
+              autofocus
+              @keyup.enter="nextStep"
+            />
+            <span class="char-count">{{ form.title.length }}/100</span>
+          </div>
+          <div class="field">
+            <label>旅行の説明（任意）</label>
+            <textarea
+              v-model="form.description"
+              placeholder="旅行の目的や概要を入力してください..."
+              rows="3"
+              maxlength="500"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- Step 2：日程 -->
+        <div v-if="step === 2">
+          <h2>日程を設定しましょう</h2>
+          <p class="step-desc">旅行の出発日と帰宅日を選んでください。</p>
+          <div class="field-row">
+            <div class="field">
+              <label>出発日 *</label>
+              <input v-model="form.start_date" type="date" :min="today" />
+            </div>
+            <div class="field">
+              <label>帰宅日 *</label>
+              <input v-model="form.end_date" type="date" :min="form.start_date || today" />
+            </div>
+          </div>
+          <div v-if="nightCount > 0" class="night-badge">
+            {{ nightCount }}泊{{ nightCount + 1 }}日の旅行
+          </div>
+          <div v-if="form.start_date && form.end_date && form.end_date < form.start_date" class="field-error">
+            帰宅日は出発日以降の日付を選んでください。
+          </div>
+        </div>
+
+        <!-- Step 3：設定 -->
+        <div v-if="step === 3">
+          <h2>その他の設定</h2>
+          <p class="step-desc">通貨と公開設定を選んでください（後から変更できます）。</p>
+
+          <div class="field">
+            <label>通貨</label>
+            <div class="currency-options">
+              <button
+                v-for="(sym, code) in currencySymbol"
+                :key="code"
+                class="currency-btn"
+                :class="{ selected: form.currency === code }"
+                type="button"
+                @click="form.currency = code"
+              >
+                <span class="currency-sym">{{ sym }}</span>
+                <span class="currency-code">{{ code }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>公開設定</label>
+            <div class="visibility-options">
+              <label
+                v-for="v in ['public', 'friends', 'private']"
+                :key="v"
+                class="visibility-option"
+                :class="{ selected: form.visibility === v }"
+              >
+                <input type="radio" v-model="form.visibility" :value="v" hidden />
+                <div class="vis-icon">
+                  {{ v === 'public' ? '🌐' : v === 'friends' ? '👥' : '🔒' }}
+                </div>
+                <div>
+                  <p class="vis-label">{{ v === 'public' ? '公開' : v === 'friends' ? '友達のみ' : '非公開' }}</p>
+                  <p class="vis-desc">{{ visibilityDesc[v] }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 確認サマリー -->
+          <div class="summary">
+            <h3>作成内容の確認</h3>
+            <div class="summary-row"><span>タイトル</span><strong>{{ form.title }}</strong></div>
+            <div class="summary-row"><span>日程</span><strong>{{ form.start_date }} 〜 {{ form.end_date }}（{{ nightCount }}泊{{ nightCount + 1 }}日）</strong></div>
+            <div class="summary-row"><span>通貨</span><strong>{{ form.currency }}</strong></div>
+            <div class="summary-row"><span>公開設定</span><strong>{{ form.visibility === 'public' ? '公開' : form.visibility === 'friends' ? '友達のみ' : '非公開' }}</strong></div>
+          </div>
+
+          <p v-if="error" class="error">{{ error }}</p>
+        </div>
+
+        <!-- ナビゲーションボタン -->
+        <div class="nav-buttons">
+          <button v-if="step > 1" class="btn-outline" @click="prevStep">← 戻る</button>
+          <div class="spacer"></div>
+          <button
+            v-if="step < 3"
+            class="btn-primary"
+            :disabled="(step === 1 && !step1Valid) || (step === 2 && !step2Valid)"
+            @click="nextStep"
+          >
+            次へ →
+          </button>
+          <button
+            v-else
+            class="btn-primary btn-create"
+            :disabled="creating"
+            @click="submit"
+          >
+            {{ creating ? '作成中...' : '旅行を作成する 🎉' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- ログインしていない場合の案内 -->
+      <div v-if="!auth.isLoggedIn" class="guest-note">
+        <p>💡 ログインすると旅行データが保存されます。</p>
+        <RouterLink to="/login" class="btn-outline-small">ログインする</RouterLink>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.create-page { min-height: 100vh; background: #f5f7fa; }
+
+.header {
+  background: #fff;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.back-btn { background: none; border: none; color: #42b983; cursor: pointer; font-size: 0.9rem; padding: 0; }
+h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
+
+.content { max-width: 560px; margin: 0 auto; padding: 32px 20px; }
+
+/* ステップ */
+.steps {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 28px;
+  position: relative;
+}
+.step-line {
+  position: absolute;
+  top: 18px;
+  left: calc(50% - 120px);
+  width: 240px;
+  height: 2px;
+  background: #ddd;
+  z-index: 0;
+}
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100px;
+  z-index: 1;
+}
+.step-circle {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  color: #aaa;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.step-circle.active { background: #42b983; border-color: #42b983; color: #fff; }
+.step-circle.done { background: #369870; border-color: #369870; color: #fff; }
+.step-label { font-size: 0.78rem; color: #888; }
+
+/* カード */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 32px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+.card h2 { margin: 0 0 8px; font-size: 1.2rem; color: #2c3e50; }
+.step-desc { font-size: 0.88rem; color: #888; margin: 0 0 24px; }
+
+/* フォーム */
+.field { margin-bottom: 18px; position: relative; }
+.field-row { display: flex; gap: 14px; }
+.field-row .field { flex: 1; }
+label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 5px; font-weight: 500; }
+input[type="text"], input[type="date"], textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 9px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+input:focus, textarea:focus { outline: none; border-color: #42b983; }
+.char-count { position: absolute; right: 10px; bottom: 10px; font-size: 0.75rem; color: #bbb; }
+.field-error { color: #e74c3c; font-size: 0.82rem; margin-top: 4px; }
+
+.night-badge {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #42b983;
+  font-size: 0.9rem;
+  font-weight: bold;
+  padding: 6px 16px;
+  border-radius: 20px;
+  margin-top: 8px;
+}
+
+/* 通貨 */
+.currency-options { display: flex; gap: 10px; }
+.currency-btn {
+  flex: 1;
+  padding: 14px 8px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.currency-btn.selected { border-color: #42b983; background: #e8f5e9; }
+.currency-sym { font-size: 1.4rem; font-weight: bold; color: #2c3e50; }
+.currency-code { font-size: 0.8rem; color: #888; }
+
+/* 公開設定 */
+.visibility-options { display: flex; flex-direction: column; gap: 10px; }
+.visibility-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.visibility-option.selected { border-color: #42b983; background: #f0faf6; }
+.vis-icon { font-size: 1.5rem; }
+.vis-label { margin: 0; font-size: 0.9rem; font-weight: bold; color: #333; }
+.vis-desc { margin: 2px 0 0; font-size: 0.78rem; color: #aaa; }
+
+/* サマリー */
+.summary {
+  margin-top: 20px;
+  background: #f9f9f9;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+.summary h3 { margin: 0 0 12px; font-size: 0.9rem; color: #666; }
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #efefef;
+  font-size: 0.88rem;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-row span { color: #888; }
+.summary-row strong { color: #333; text-align: right; max-width: 60%; }
+
+.error { color: #e74c3c; font-size: 0.85rem; margin: 10px 0 0; }
+
+/* ナビゲーション */
+.nav-buttons {
+  display: flex;
+  align-items: center;
+  margin-top: 28px;
+  gap: 12px;
+}
+.spacer { flex: 1; }
+
+/* ゲスト案内 */
+.guest-note {
+  margin-top: 16px;
+  background: #fff8e1;
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.guest-note p { margin: 0; font-size: 0.87rem; color: #666; }
+.btn-outline-small {
+  background: transparent; color: #42b983; border: 1px solid #42b983;
+  padding: 6px 12px; border-radius: 6px; text-decoration: none;
+  font-size: 0.82rem; white-space: nowrap;
+}
+
+/* ボタン */
+.btn-primary {
+  background: #42b983; color: #fff; border: none;
+  padding: 11px 24px; border-radius: 9px; cursor: pointer;
+  font-size: 0.95rem; font-weight: bold;
+}
+.btn-primary:hover:not(:disabled) { background: #369870; }
+.btn-primary:disabled { background: #a0d9bf; cursor: not-allowed; }
+.btn-primary.btn-create { padding: 12px 28px; }
+.btn-outline {
+  background: transparent; color: #555; border: 1.5px solid #ddd;
+  padding: 11px 20px; border-radius: 9px; cursor: pointer; font-size: 0.95rem;
+}
+.btn-outline:hover { border-color: #aaa; }
+
+@media (max-width: 480px) {
+  .card { padding: 24px 18px; }
+  .field-row { flex-direction: column; gap: 0; }
+  .currency-options { gap: 6px; }
+  .guest-note { flex-direction: column; align-items: flex-start; }
+}
+</style>
