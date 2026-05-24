@@ -38,8 +38,12 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchMe()
   }
 
-  async function register(email: string, username: string, password: string) {
-    const { data } = await api.post('/auth/register/', { email, username, password })
+  // verification_token: メール認証完了後に Django が発行した HMAC トークン。
+  // これがないとサーバー側で登録を拒否される。
+  async function register(email: string, username: string, password: string, verificationToken: string) {
+    const { data } = await api.post('/auth/register/', {
+      email, username, password, verification_token: verificationToken,
+    })
     accessToken.value = data.access
     localStorage.setItem('access_token', data.access)
     localStorage.setItem('refresh_token', data.refresh)

@@ -139,12 +139,12 @@ async function deleteTrip() {
           </div>
           <div class="field-row">
             <div class="field">
-              <label>出発日 *</label>
-              <input v-model="form.start_date" type="date" required />
+              <label for="m_start_date" class="date-label" @click.prevent="($refs.mStartDate as HTMLInputElement).showPicker()">出発日 *</label>
+              <input id="m_start_date" ref="mStartDate" v-model="form.start_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" />
             </div>
             <div class="field">
-              <label>帰宅日 *</label>
-              <input v-model="form.end_date" type="date" required />
+              <label for="m_end_date" class="date-label" @click.prevent="($refs.mEndDate as HTMLInputElement).showPicker()">帰宅日 *</label>
+              <input id="m_end_date" ref="mEndDate" v-model="form.end_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" />
             </div>
           </div>
           <div class="field">
@@ -254,6 +254,8 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .field-row { display: flex; gap: 14px; }
 .field-row .field { flex: 1; }
 label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+.date-label { cursor: pointer; user-select: none; }
+.date-label:hover { color: #42b983; }
 input[type="text"], input[type="date"], textarea, select {
   width: 100%;
   padding: 10px 12px;

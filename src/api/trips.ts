@@ -1,4 +1,15 @@
 // API 関数とデータ型の定義ファイル。
+// authApi: メール認証関連のAPI（会員登録フローで使う）。
+export const authApi = {
+  // STEP1: メールアドレスに6桁認証コードを送信する。
+  sendVerification: (email: string) =>
+    api.post<{ detail: string }>('/auth/send-verification/', { email }),
+  // STEP2: 入力されたコードを検証し、成功すれば verification_token を返す。
+  verifyEmail: (email: string, code: string) =>
+    api.post<{ verification_token: string }>('/auth/verify-email/', { email, code }),
+}
+
+
 // ビューコンポーネントから直接 axios を呼ぶ代わりに、ここに集約することで
 // エンドポイントの変更時に修正箇所が1ヶ所で済む。
 import api from './client'
@@ -95,4 +106,71 @@ export const commentsApi = {
   list: (spotId: string) => api.get<Comment[]>(`/spots/${spotId}/comments/`),
   create: (spotId: string, data: { content: string; guest_name?: string }) =>
     api.post<Comment>(`/spots/${spotId}/comments/`, data),
+}
+
+// 費用データの型定義。
+export interface Expense {
+  id: string
+  trip: string
+  spot: string | null       // スポットUUID（旅行全体の費用の場合は null）
+  spot_name: string | null  // スポット名（表示用）
+  payer: number | null
+  payer_name: string
+  name: string
+  amount: string   // Django DecimalField は文字列として返ってくる
+  currency: string
+  date: string | null
+  memo: string
+  participant_ids: number[]
+  created_at: string
+}
+
+// 精算計算結果の型定義。
+export interface Settlement {
+  from_member_id: number
+  from_member_name: string
+  to_member_id: number
+  to_member_name: string
+  amount: number
+  currency: string
+}
+
+export interface BalanceSummary {
+  member_id: number
+  member_name: string
+  balance: number
+  currency: string
+}
+
+export interface SettlementResult {
+  settlements: Settlement[]
+  balance_summary: BalanceSummary[]
+  currency: string
+}
+
+// expensesApi: 費用CRUD と精算計算のAPI関数をまとめたオブジェクト。
+export const expensesApi = {
+  // 旅行の費用一覧を取得する。
+  list: (hashUrl: string) => api.get<Expense[]>(`/trips/${hashUrl}/expenses/`),
+  // 新しい費用を登録する。participant_ids は M2M の参加者IDリスト。spot は任意。
+  create: (hashUrl: string, data: {
+    payer: number
+    name: string
+    amount: number | string
+    currency: string
+    date?: string
+    memo?: string
+    participant_ids: number[]
+    spot?: string | null
+  }) => api.post<Expense>(`/trips/${hashUrl}/expenses/`, data),
+  // スポット別の費用一覧を取得する（?spot_id= でフィルタ）。
+  listBySpot: (hashUrl: string, spotId: string) =>
+    api.get<Expense[]>(`/trips/${hashUrl}/expenses/?spot_id=${spotId}`),
+  // 費用を更新する（PATCH なので変更したフィールドだけ送ればよい）。
+  update: (id: string, data: Partial<Expense> & { participant_ids?: number[] }) =>
+    api.patch<Expense>(`/expenses/${id}/`, data),
+  // 費用を削除する。
+  delete: (id: string) => api.delete(`/expenses/${id}/`),
+  // 精算計算結果を取得する。
+  settlement: (hashUrl: string) => api.get<SettlementResult>(`/trips/${hashUrl}/settlement/`),
 }

@@ -58,6 +58,11 @@ const router = createRouter({
       component: () => import('../views/TripManageView.vue'),
     },
     {
+      path: '/trips/:hashUrl/expenses',
+      name: 'trip-expenses',
+      component: () => import('../views/ExpenseView.vue'),
+    },
+    {
       path: '/travels',
       name: 'travels',
       component: () => import('../views/TravelListView.vue'),

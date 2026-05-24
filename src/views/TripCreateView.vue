@@ -126,12 +126,14 @@ const visibilityDesc: Record<string, string> = {
           <p class="step-desc">旅行の出発日と帰宅日を選んでください。</p>
           <div class="field-row">
             <div class="field">
-              <label>出発日 *</label>
-              <input v-model="form.start_date" type="date" :min="today" />
+              <!-- for="start_date": label をクリックすると id="start_date" の input にフォーカスが移る。
+                   showPicker(): フォーカスだけでなくカレンダーを確実に開く。 -->
+              <label for="start_date" class="date-label" @click.prevent="($refs.startDate as HTMLInputElement).showPicker()">出発日 *</label>
+              <input id="start_date" ref="startDate" v-model="form.start_date" type="date" :min="today" @click="($event.target as HTMLInputElement).showPicker()" />
             </div>
             <div class="field">
-              <label>帰宅日 *</label>
-              <input v-model="form.end_date" type="date" :min="form.start_date || today" />
+              <label for="end_date" class="date-label" @click.prevent="($refs.endDate as HTMLInputElement).showPicker()">帰宅日 *</label>
+              <input id="end_date" ref="endDate" v-model="form.end_date" type="date" :min="form.start_date || today" @click="($event.target as HTMLInputElement).showPicker()" />
             </div>
           </div>
           <div v-if="nightCount > 0" class="night-badge">
@@ -303,6 +305,8 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .field-row { display: flex; gap: 14px; }
 .field-row .field { flex: 1; }
 label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 5px; font-weight: 500; }
+.date-label { cursor: pointer; user-select: none; }
+.date-label:hover { color: #42b983; }
 input[type="text"], input[type="date"], textarea {
   width: 100%;
   padding: 11px 13px;

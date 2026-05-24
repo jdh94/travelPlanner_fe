@@ -4,7 +4,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTripsStore } from '@/stores/trips'
-import { commentsApi, type Comment } from '@/api/trips'
+import { commentsApi, expensesApi, membersApi, type Comment, type Expense, type TripMember } from '@/api/trips'
 import type { Spot } from '@/api/trips'
 
 // useRoute(): 現在のルート情報（URLパラメータ、クエリ等）を取得する。
@@ -28,6 +28,98 @@ const selectedSpotId = ref<string | null>(null)
 const showEditSpot = ref(false)
 const editSpotError = ref('')
 const editSpotLoading = ref(false)
+
+// --- スポット別費用 ---
+// spotExpenses: スポットID → 費用リスト の辞書（comments と同じパターン）。
+const spotExpenses = ref<Record<string, Expense[]>>({})
+// showExpenseForm: スポットIDをキーに「費用追加フォームを表示するか」を管理する。
+const showExpenseForm = ref<Record<string, boolean>>({})
+// tripMembers: 支払者・参加者の選択肢に使う旅行メンバーリスト。
+const tripMembers = ref<TripMember[]>([])
+// expenseForm: スポットIDをキーに入力中のフォーム値を管理する。
+const expenseForm = ref<Record<string, {
+  name: string; amount: string; payer: number | null; participantIds: number[]
+}>>({})
+
+// スポットの費用フォームの初期値を返す。
+function defaultExpenseForm(members: TripMember[]) {
+  return {
+    name: '',
+    amount: '',
+    payer: members[0]?.id ?? null,
+    participantIds: members.map(m => m.id),
+  }
+}
+
+// 指定スポットの費用一覧を取得する（まだ取得していない場合のみ）。
+async function loadSpotExpenses(spotId: string) {
+  if (spotExpenses.value[spotId]) return
+  const { data } = await expensesApi.listBySpot(hashUrl, spotId)
+  spotExpenses.value[spotId] = data
+}
+
+// 費用追加フォームを開く。
+function openExpenseForm(spotId: string) {
+  // フォームの初期値をセット（全メンバー参加者として選択済みにする）。
+  expenseForm.value[spotId] = defaultExpenseForm(tripMembers.value)
+  showExpenseForm.value[spotId] = true
+}
+
+// 費用を登録してリストに追加する。
+async function addSpotExpense(spotId: string) {
+  const form = expenseForm.value[spotId]
+  if (!form.name.trim()) { alert('費用名を入力してください。'); return }
+  if (!form.amount || Number(form.amount) <= 0) { alert('金額を入力してください。'); return }
+  if (!form.payer) { alert('支払者を選択してください。'); return }
+  if (form.participantIds.length === 0) { alert('参加者を1人以上選択してください。'); return }
+
+  const { data } = await expensesApi.create(hashUrl, {
+    name: form.name,
+    amount: form.amount,
+    // trip の通貨をデフォルトで使う。
+    currency: trip.value?.currency ?? 'JPY',
+    payer: form.payer,
+    participant_ids: form.participantIds,
+    spot: spotId,
+  })
+  // リストの末尾に追加（再取得しないので高速）。
+  if (!spotExpenses.value[spotId]) spotExpenses.value[spotId] = []
+  spotExpenses.value[spotId].push(data)
+  showExpenseForm.value[spotId] = false
+  showToast(`「${data.name}」を追加しました`)
+}
+
+// 費用を削除する。
+async function deleteSpotExpense(spotId: string, expenseId: string) {
+  if (!confirm('この費用を削除しますか？')) return
+  await expensesApi.delete(expenseId)
+  spotExpenses.value[spotId] = spotExpenses.value[spotId].filter(e => e.id !== expenseId)
+  showToast('費用を削除しました')
+}
+
+// そのスポットの費用合計を計算する。
+function spotTotal(spotId: string): string {
+  const list = spotExpenses.value[spotId] ?? []
+  const total = list.reduce((sum, e) => sum + Number(e.amount), 0)
+  return total.toLocaleString()
+}
+
+// トースト通知: 削除などの操作後に画面下部に一瞬表示するポップアップ。
+const toastMessage = ref('')
+const toastVisible = ref(false)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+// showToast(): メッセージを受け取り、2.5秒後に自動で消えるトーストを表示する。
+// setTimeout: 指定ミリ秒後に1回だけコールバックを実行するブラウザAPI。
+function showToast(message: string) {
+  // 前のタイマーが残っていたらキャンセルする（連続削除時に表示がリセットされる）。
+  if (toastTimer) clearTimeout(toastTimer)
+  toastMessage.value = message
+  toastVisible.value = true
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false
+  }, 2500)
+}
 const editingSpotId = ref<string | null>(null)
 const editForm = ref({
   name: '',
@@ -97,10 +189,14 @@ const categoryLabels: Record<string, string> = {
 // ここで API からデータを取得するのが一般的なパターン。
 onMounted(async () => {
   try {
-    await tripsStore.fetchTrip(hashUrl)
+    // 旅行データとメンバーリストを並行取得する。
+    const [, memRes] = await Promise.all([
+      tripsStore.fetchTrip(hashUrl),
+      membersApi.list(hashUrl),
+    ])
+    tripMembers.value = memRes.data
   } catch (e: any) {
     if (e.response?.data?.pin_required) {
-      // PIN 必須エラーが返ってきた場合、古いトークンを削除して PIN 入力ページへ遷移する。
       localStorage.removeItem(`pin_token_${hashUrl}`)
       router.push(`/trips/${hashUrl}/pin`)
     }
@@ -179,10 +275,14 @@ async function saveEdit() {
 
 async function deleteSpot(id: string) {
   if (!confirm('このスポットを削除しますか？')) return
+  // 削除前にスポット名を取得しておく（削除後は参照できなくなるため）。
+  const spotName = trip.value?.spots.find(s => s.id === id)?.name ?? 'スポット'
   await tripsStore.deleteSpot(hashUrl, id)
   if (selectedSpotId.value === id) {
     selectedSpotId.value = trip.value?.spots[0]?.id ?? null
   }
+  // 削除成功後にトースト通知を表示する。
+  showToast(`「${spotName}」を削除しました`)
 }
 
 async function postComment(spotId: string) {
@@ -216,6 +316,7 @@ function formatDate(date: string) {
         <!-- {{ }}: Mustache構文。リアクティブな値をテキストとして描画する。 -->
         <span class="dates">{{ formatDate(trip.start_date) }} 〜 {{ formatDate(trip.end_date) }}</span>
       </div>
+      <RouterLink :to="`/trips/${hashUrl}/expenses`" class="btn-outline">費用</RouterLink>
       <RouterLink :to="`/trips/${hashUrl}/manage`" class="btn-outline">管理</RouterLink>
       <RouterLink :to="`/trips/${hashUrl}/share`" class="btn-outline">共有</RouterLink>
     </header>
@@ -273,6 +374,86 @@ function formatDate(date: string) {
           </div>
 
           <p v-if="spot.memo" class="spot-memo">{{ spot.memo }}</p>
+
+          <!-- 費用セクション -->
+          <!--
+            @click.stop: スポットカード全体のクリック（selectSpot）に伝播しないようにする。
+            @vue:mounted や @focus でなく、ボタンクリック時だけ費用をロードする遅延取得にする。
+          -->
+          <div class="spot-expenses-section" @click.stop>
+            <div class="spot-expenses-header">
+              <span class="expenses-label">💰 費用</span>
+              <!--
+                v-if / v-else: 費用が読み込まれているかどうかで表示を切り替える。
+                まだ取得していないスポットは「タップして表示」と表示する。
+              -->
+              <span v-if="spotExpenses[spot.id]" class="expenses-total">
+                合計 {{ spotTotal(spot.id) }} {{ trip.currency }}
+              </span>
+              <button
+                class="btn-expense-toggle"
+                @click="loadSpotExpenses(spot.id)"
+              >{{ spotExpenses[spot.id] ? '' : '▼ 表示' }}</button>
+            </div>
+
+            <!-- 費用一覧（ロード済みの場合だけ表示） -->
+            <template v-if="spotExpenses[spot.id]">
+              <div v-if="spotExpenses[spot.id].length === 0" class="no-expenses">
+                費用はまだありません。
+              </div>
+              <div v-for="exp in spotExpenses[spot.id]" :key="exp.id" class="expense-row">
+                <div class="expense-row-main">
+                  <span class="expense-row-name">{{ exp.name }}</span>
+                  <span class="expense-row-payer">{{ exp.payer_name }}</span>
+                </div>
+                <div class="expense-row-right">
+                  <span class="expense-row-amount">{{ Number(exp.amount).toLocaleString() }} {{ exp.currency }}</span>
+                  <button class="btn-expense-del" @click="deleteSpotExpense(spot.id, exp.id)">✕</button>
+                </div>
+              </div>
+
+              <!-- 費用追加フォーム（トグル式） -->
+              <div v-if="!showExpenseForm[spot.id]" class="expense-add-row">
+                <button class="btn-add-expense" @click="openExpenseForm(spot.id)">＋ 費用を追加</button>
+              </div>
+              <div v-else class="expense-inline-form">
+                <input
+                  v-model="expenseForm[spot.id].name"
+                  placeholder="費用名（例: ランチ）"
+                  class="expense-input"
+                />
+                <div class="expense-form-row">
+                  <input
+                    v-model="expenseForm[spot.id].amount"
+                    type="number"
+                    placeholder="金額"
+                    class="expense-input expense-input-amount"
+                  />
+                  <!-- 支払者セレクト -->
+                  <select v-model="expenseForm[spot.id].payer" class="expense-select">
+                    <option v-for="m in tripMembers" :key="m.id" :value="m.id">
+                      {{ m.user_name }}
+                    </option>
+                  </select>
+                </div>
+                <!-- 参加者チェックボックス -->
+                <div class="expense-participants">
+                  <label v-for="m in tripMembers" :key="m.id" class="expense-check-label">
+                    <input
+                      type="checkbox"
+                      :value="m.id"
+                      v-model="expenseForm[spot.id].participantIds"
+                    />
+                    {{ m.user_name }}
+                  </label>
+                </div>
+                <div class="expense-form-actions">
+                  <button class="btn-expense-cancel" @click="showExpenseForm[spot.id] = false">キャンセル</button>
+                  <button class="btn-expense-save" @click="addSpotExpense(spot.id)">追加</button>
+                </div>
+              </div>
+            </template>
+          </div>
 
           <div class="comments-section" @click.stop>
             <div v-if="!comments[spot.id] || comments[spot.id].length === 0" class="no-comments">コメントはまだありません。</div>
@@ -402,6 +583,19 @@ function formatDate(date: string) {
         </div>
       </div>
     </div>
+
+    <!--
+      トースト通知。
+      Transition: Vue の組み込みコンポーネント。v-if/v-show と組み合わせて
+      要素の表示・非表示にCSSアニメーションを付けられる。
+      name="toast" → .toast-enter-active などのCSSクラスが自動で付与される。
+    -->
+    <Transition name="toast">
+      <div v-if="toastVisible" class="toast">
+        <span class="toast-icon">✓</span>
+        {{ toastMessage }}
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -460,6 +654,79 @@ function formatDate(date: string) {
 .btn-danger-text { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 0.8rem; padding: 0; }
 .spot-memo { font-size: 0.85rem; color: #666; margin: 8px 0 0; background: #f9f9f9; padding: 8px; border-radius: 6px; }
 
+/* スポット別費用セクション */
+.spot-expenses-section {
+  margin-top: 10px;
+  border-top: 1px solid #f0f0f0;
+  padding-top: 10px;
+}
+.spot-expenses-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.expenses-label { font-size: 0.82rem; font-weight: 600; color: #555; }
+.expenses-total { font-size: 0.8rem; color: #42b983; font-weight: 600; margin-left: auto; }
+.btn-expense-toggle {
+  background: none; border: none; font-size: 0.78rem; color: #42b983;
+  cursor: pointer; padding: 2px 6px; margin-left: auto;
+}
+.no-expenses { font-size: 0.78rem; color: #bbb; padding: 4px 0; }
+.expense-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dashed #f0f0f0;
+  gap: 8px;
+}
+.expense-row-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.expense-row-name { font-size: 0.85rem; font-weight: 500; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expense-row-payer { font-size: 0.75rem; color: #888; }
+.expense-row-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.expense-row-amount { font-size: 0.85rem; font-weight: 600; color: #e74c3c; }
+.btn-expense-del {
+  background: none; border: none; color: #ccc; font-size: 0.75rem;
+  cursor: pointer; padding: 1px 4px;
+}
+.btn-expense-del:hover { color: #e74c3c; }
+.expense-add-row { padding: 6px 0 2px; }
+.btn-add-expense {
+  background: none; border: 1px dashed #42b983; color: #42b983;
+  border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; cursor: pointer;
+  width: 100%;
+}
+.btn-add-expense:hover { background: #f0faf6; }
+.expense-inline-form { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.expense-input {
+  width: 100%; padding: 6px 9px; border: 1px solid #ddd; border-radius: 7px;
+  font-size: 0.85rem; box-sizing: border-box;
+}
+.expense-input:focus { outline: none; border-color: #42b983; }
+.expense-form-row { display: flex; gap: 6px; }
+.expense-input-amount { flex: 1; }
+.expense-select {
+  flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 7px;
+  font-size: 0.85rem; box-sizing: border-box;
+}
+.expense-participants { display: flex; flex-wrap: wrap; gap: 6px; }
+.expense-check-label {
+  display: flex; align-items: center; gap: 4px; font-size: 0.8rem;
+  padding: 3px 8px; background: #f5f5f5; border-radius: 6px; cursor: pointer;
+}
+.expense-check-label input[type="checkbox"] { accent-color: #42b983; }
+.expense-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-expense-cancel {
+  background: #f0f0f0; border: none; border-radius: 6px;
+  padding: 5px 12px; font-size: 0.8rem; cursor: pointer;
+}
+.btn-expense-save {
+  background: #42b983; color: #fff; border: none; border-radius: 6px;
+  padding: 5px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.btn-expense-save:hover { background: #369f73; }
+
 .comments-section { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
 .no-comments { font-size: 0.8rem; color: #bbb; margin-bottom: 8px; }
 .comment { display: flex; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; align-items: baseline; }
@@ -495,4 +762,45 @@ input, select, textarea { width: 100%; padding: 9px 11px; border: 1px solid #ddd
 @media (min-width: 769px) {
   .tabs { display: none; }
 }
+
+/* トースト通知 */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  /* translateX(-50%): left:50% で左端が中央になるので、自身の幅の半分だけ左にずらして中央揃えにする。 */
+  transform: translateX(-50%);
+  background: #2c3e50;
+  color: #fff;
+  padding: 12px 22px;
+  border-radius: 24px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  white-space: nowrap;
+  z-index: 9999;
+}
+
+.toast-icon {
+  background: #42b983;
+  color: #fff;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* Transition のアニメーション。
+   enter: 非表示 → 表示のアニメーション
+   leave: 表示 → 非表示のアニメーション */
+.toast-enter-active  { transition: opacity 0.25s ease, transform 0.25s ease; }
+.toast-leave-active  { transition: opacity 0.3s ease, transform 0.3s ease; }
+.toast-enter-from    { opacity: 0; transform: translateX(-50%) translateY(12px); }
+.toast-leave-to      { opacity: 0; transform: translateX(-50%) translateY(12px); }
 </style>
