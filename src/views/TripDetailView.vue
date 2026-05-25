@@ -38,14 +38,15 @@ const showExpenseForm = ref<Record<string, boolean>>({})
 const tripMembers = ref<TripMember[]>([])
 // expenseForm: スポットIDをキーに入力中のフォーム値を管理する。
 const expenseForm = ref<Record<string, {
-  name: string; amount: string; payer: number | null; participantIds: number[]
+  name: string; amount: string; currency: string; payer: number | null; participantIds: number[]
 }>>({})
 
 // スポットの費用フォームの初期値を返す。
-function defaultExpenseForm(members: TripMember[]) {
+function defaultExpenseForm(members: TripMember[], currency: string) {
   return {
     name: '',
     amount: '',
+    currency,
     payer: members[0]?.id ?? null,
     participantIds: members.map(m => m.id),
   }
@@ -60,8 +61,10 @@ async function loadSpotExpenses(spotId: string) {
 
 // 費用追加フォームを開く。
 function openExpenseForm(spotId: string) {
-  // フォームの初期値をセット（全メンバー参加者として選択済みにする）。
-  expenseForm.value[spotId] = defaultExpenseForm(tripMembers.value)
+  // スポットの通貨 → なければ旅行の通貨 をデフォルトにする。
+  const spot = trip.value?.spots.find(s => s.id === spotId)
+  const defaultCurrency = spot?.currency || trip.value?.currency || 'JPY'
+  expenseForm.value[spotId] = defaultExpenseForm(tripMembers.value, defaultCurrency)
   showExpenseForm.value[spotId] = true
 }
 
@@ -76,8 +79,7 @@ async function addSpotExpense(spotId: string) {
   const { data } = await expensesApi.create(hashUrl, {
     name: form.name,
     amount: form.amount,
-    // trip の通貨をデフォルトで使う。
-    currency: trip.value?.currency ?? 'JPY',
+    currency: form.currency,
     payer: form.payer,
     participant_ids: form.participantIds,
     spot: spotId,
@@ -128,6 +130,7 @@ const editForm = ref({
   visit_time: '',
   duration_min: '',
   memo: '',
+  currency: '',
 })
 
 // computed: tripsStore.currentTrip を参照する。
@@ -175,6 +178,7 @@ const spotForm = ref({
   visit_time: '',
   duration_min: '',
   memo: '',
+  currency: '',  // 空文字 = 旅行の通貨をデフォルトとして使う
 })
 
 const categoryLabels: Record<string, string> = {
@@ -216,7 +220,7 @@ async function addSpot() {
     })
     selectedSpotId.value = spot.id
     showAddSpot.value = false
-    spotForm.value = { name: '', category: 'other', address: '', visit_time: '', duration_min: '', memo: '' }
+    spotForm.value = { name: '', category: 'other', address: '', visit_time: '', duration_min: '', memo: '', currency: '' }
   } catch (e: any) {
     // DRF のバリデーションエラーは { field: ["エラーメッセージ"] } 形式で返ってくる。
     const data = e.response?.data
@@ -242,6 +246,7 @@ function openEdit(spot: Spot) {
     visit_time: spot.visit_time ?? '',
     duration_min: spot.duration_min ? String(spot.duration_min) : '',
     memo: spot.memo ?? '',
+    currency: spot.currency ?? '',
   }
   editSpotError.value = ''
   showEditSpot.value = true
@@ -417,35 +422,50 @@ function formatDate(date: string) {
                 <button class="btn-add-expense" @click="openExpenseForm(spot.id)">＋ 費用を追加</button>
               </div>
               <div v-else class="expense-inline-form">
+                <!-- 費用名 -->
                 <input
                   v-model="expenseForm[spot.id].name"
                   placeholder="費用名（例: ランチ）"
                   class="expense-input"
                 />
+                <!-- 金額 + 通貨 -->
                 <div class="expense-form-row">
-                  <input
-                    v-model="expenseForm[spot.id].amount"
-                    type="number"
-                    placeholder="金額"
-                    class="expense-input expense-input-amount"
-                  />
-                  <!-- 支払者セレクト -->
-                  <select v-model="expenseForm[spot.id].payer" class="expense-select">
-                    <option v-for="m in tripMembers" :key="m.id" :value="m.id">
-                      {{ m.user_name }}
-                    </option>
-                  </select>
-                </div>
-                <!-- 参加者チェックボックス -->
-                <div class="expense-participants">
-                  <label v-for="m in tripMembers" :key="m.id" class="expense-check-label">
+                  <div class="expense-amount-wrap">
                     <input
-                      type="checkbox"
-                      :value="m.id"
-                      v-model="expenseForm[spot.id].participantIds"
+                      v-model="expenseForm[spot.id].amount"
+                      type="number"
+                      placeholder="0"
+                      class="expense-input expense-input-amount"
                     />
-                    {{ m.user_name }}
-                  </label>
+                    <select v-model="expenseForm[spot.id].currency" class="expense-currency-inline">
+                      <option value="JPY">¥ JPY</option>
+                      <option value="KRW">₩ KRW</option>
+                      <option value="USD">$ USD</option>
+                    </select>
+                  </div>
+                  <!-- 支払者 -->
+                  <div class="expense-payer-wrap">
+                    <span class="expense-field-label">支払者</span>
+                    <select v-model="expenseForm[spot.id].payer" class="expense-select">
+                      <option v-for="m in tripMembers" :key="m.id" :value="m.id">
+                        {{ m.user_name }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+                <!-- 参加者 -->
+                <div class="expense-participants-wrap">
+                  <span class="expense-field-label">参加者</span>
+                  <div class="expense-participants">
+                    <label v-for="m in tripMembers" :key="m.id" class="expense-check-label">
+                      <input
+                        type="checkbox"
+                        :value="m.id"
+                        v-model="expenseForm[spot.id].participantIds"
+                      />
+                      {{ m.user_name }}
+                    </label>
+                  </div>
                 </div>
                 <div class="expense-form-actions">
                   <button class="btn-expense-cancel" @click="showExpenseForm[spot.id] = false">キャンセル</button>
@@ -525,6 +545,15 @@ function formatDate(date: string) {
           </div>
         </div>
         <div class="field">
+          <label>通貨</label>
+          <select v-model="spotForm.currency">
+            <option value="">旅行の通貨に従う（デフォルト）</option>
+            <option value="JPY">円 (JPY)</option>
+            <option value="KRW">ウォン (KRW)</option>
+            <option value="USD">ドル (USD)</option>
+          </select>
+        </div>
+        <div class="field">
           <label>メモ</label>
           <textarea v-model="spotForm.memo" placeholder="予約情報など..." rows="3"></textarea>
         </div>
@@ -569,6 +598,15 @@ function formatDate(date: string) {
             <label>滞在時間（分）</label>
             <input v-model="editForm.duration_min" type="number" placeholder="60" />
           </div>
+        </div>
+        <div class="field">
+          <label>通貨</label>
+          <select v-model="editForm.currency">
+            <option value="">旅行の通貨に従う（デフォルト）</option>
+            <option value="JPY">円 (JPY)</option>
+            <option value="KRW">ウォン (KRW)</option>
+            <option value="USD">ドル (USD)</option>
+          </select>
         </div>
         <div class="field">
           <label>メモ</label>
@@ -698,25 +736,74 @@ function formatDate(date: string) {
   width: 100%;
 }
 .btn-add-expense:hover { background: #f0faf6; }
-.expense-inline-form { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.expense-inline-form {
+  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: #f8fdf9;
+  border: 1px solid #d4edd9;
+  border-radius: 10px;
+  padding: 12px;
+}
 .expense-input {
-  width: 100%; padding: 6px 9px; border: 1px solid #ddd; border-radius: 7px;
-  font-size: 0.85rem; box-sizing: border-box;
+  width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 7px;
+  font-size: 0.88rem; box-sizing: border-box; background: #fff;
 }
 .expense-input:focus { outline: none; border-color: #42b983; }
-.expense-form-row { display: flex; gap: 6px; }
-.expense-input-amount { flex: 1; }
-.expense-select {
-  flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 7px;
-  font-size: 0.85rem; box-sizing: border-box;
+
+/* 金額＋通貨 | 支払者 の2カラム */
+.expense-form-row { display: flex; gap: 8px; align-items: flex-end; }
+
+/* 金額入力と通貨セレクトを横並びでひとつのボックスに */
+.expense-amount-wrap {
+  flex: 1;
+  display: flex;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #fff;
+  min-width: 0;
 }
-.expense-participants { display: flex; flex-wrap: wrap; gap: 6px; }
+.expense-amount-wrap:focus-within { border-color: #42b983; }
+.expense-input-amount {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: none;
+  outline: none;
+  font-size: 0.88rem;
+  box-sizing: border-box;
+  background: transparent;
+}
+.expense-currency-inline {
+  flex-shrink: 0;
+  border: none; border-left: 1px solid #ddd;
+  padding: 0 8px; font-size: 0.82rem; color: #555;
+  background: #f5f5f5; cursor: pointer; outline: none;
+  width: 82px;
+}
+
+/* 支払者 */
+.expense-payer-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.expense-field-label { font-size: 0.75rem; color: #888; font-weight: 500; }
+.expense-select {
+  width: 100%; padding: 7px 8px; border: 1px solid #ddd; border-radius: 7px;
+  font-size: 0.88rem; box-sizing: border-box; background: #fff;
+}
+.expense-select:focus { outline: none; border-color: #42b983; }
+
+/* 参加者 */
+.expense-participants-wrap { display: flex; flex-direction: column; gap: 4px; }
+.expense-participants { display: flex; flex-wrap: wrap; gap: 5px; }
 .expense-check-label {
-  display: flex; align-items: center; gap: 4px; font-size: 0.8rem;
-  padding: 3px 8px; background: #f5f5f5; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px; font-size: 0.82rem;
+  padding: 3px 9px; background: #fff; border: 1px solid #ddd;
+  border-radius: 20px; cursor: pointer; transition: all 0.15s;
+}
+.expense-check-label:has(input:checked) {
+  background: #e8f7ef; border-color: #42b983; color: #2a8a5e;
 }
 .expense-check-label input[type="checkbox"] { accent-color: #42b983; }
-.expense-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.expense-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .btn-expense-cancel {
   background: #f0f0f0; border: none; border-radius: 6px;
   padding: 5px 12px; font-size: 0.8rem; cursor: pointer;

@@ -197,7 +197,6 @@ async function deleteTrip() {
                 maxlength="4"
                 placeholder="4桁のPINを入力"
                 class="pin-number-input"
-                <!-- @input: 入力のたびに数字以外を除去して4桁に制限する。 -->
                 @input="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
               />
               <span class="pin-input-hint">空欄の場合は現在のPINを維持</span>

@@ -48,6 +48,8 @@ export interface Spot {
   memo: string
   order_index: number
   estimated_cost: number | null
+  // スポット固有通貨。空文字の場合は旅行の通貨を使う。
+  currency: string
 }
 
 export interface Comment {

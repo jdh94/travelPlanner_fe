@@ -1,16 +1,12 @@
 <template>
   <div class="expense-page">
-    <!-- ヘッダー: 旅行名と戻るボタン -->
+    <!-- ヘッダー -->
     <header class="page-header">
       <button class="back-btn" @click="router.push(`/trips/${hashUrl}`)">← 戻る</button>
       <h1>費用・精算</h1>
     </header>
 
-    <!-- タブ切り替え: 費用一覧 / 精算 -->
-    <!--
-      Vue の :class バインディング: オブジェクト形式で条件付きクラスを指定できる。
-      { active: activeTab === 'expenses' } → activeTab が 'expenses' のとき class="active" が付く。
-    -->
+    <!-- タブ切り替え -->
     <div class="tabs">
       <button :class="{ active: activeTab === 'expenses' }" @click="activeTab = 'expenses'">
         費用一覧
@@ -22,48 +18,70 @@
 
     <!-- ===== 費用一覧タブ ===== -->
     <div v-if="activeTab === 'expenses'">
-      <!-- 費用追加ボタン -->
-      <div class="add-btn-row">
+
+      <!--
+        スポットフィルターバー。
+        「旅行全体」がデフォルト（selectedSpotId = null）。
+        スポットを選ぶとそのスポットの費用だけ表示する。
+      -->
+      <div class="spot-filter-bar">
+        <button
+          class="spot-filter-btn"
+          :class="{ active: selectedSpotId === null }"
+          @click="selectSpot(null)"
+        >
+          🌐 旅行全体
+        </button>
+        <button
+          v-for="spot in spots"
+          :key="spot.id"
+          class="spot-filter-btn"
+          :class="{ active: selectedSpotId === spot.id }"
+          @click="selectSpot(spot.id)"
+        >
+          📍 {{ spot.name }}
+        </button>
+      </div>
+
+      <!-- 現在のビュータイトルと合計 -->
+      <div class="current-scope-header">
+        <span class="scope-label">
+          {{ selectedSpotId === null ? '🌐 旅行全体' : '📍 ' + selectedSpotName }}
+        </span>
+        <span class="scope-total">合計 {{ currentTotal }} 円</span>
         <button class="add-btn" @click="openAddModal">＋ 費用を追加</button>
       </div>
 
-      <!-- 費用がない場合のメッセージ -->
-      <div v-if="expenses.length === 0" class="empty-msg">
+      <!-- 費用がない場合 -->
+      <div v-if="filteredExpenses.length === 0" class="empty-msg">
         まだ費用が登録されていません。
       </div>
 
-      <!--
-        スポット別グループ表示。
-        computed の groupedExpenses が { spotKey: { label, expenses[] }[] } 形式で返す。
-        v-for でグループをループし、各グループ内の費用カードをネストして表示する。
-      -->
-      <div v-for="group in groupedExpenses" :key="group.key" class="expense-group">
-        <div class="group-header">
-          <span class="group-label">{{ group.label }}</span>
-          <span class="group-total">合計 {{ group.total }} 円</span>
+      <!-- 費用カード一覧 -->
+      <div v-for="expense in filteredExpenses" :key="expense.id" class="expense-card">
+        <div class="expense-main">
+          <div class="expense-info">
+            <span class="expense-name">{{ expense.name }}</span>
+            <span class="expense-date">{{ expense.date || '日付なし' }}</span>
+          </div>
+          <div class="expense-amount">
+            {{ formatAmount(expense.amount) }} {{ expense.currency }}
+          </div>
         </div>
-
-        <div v-for="expense in group.items" :key="expense.id" class="expense-card">
-          <div class="expense-main">
-            <div class="expense-info">
-              <span class="expense-name">{{ expense.name }}</span>
-              <span class="expense-date">{{ expense.date || '日付なし' }}</span>
-            </div>
-            <div class="expense-amount">
-              {{ formatAmount(expense.amount) }} {{ expense.currency }}
-            </div>
-          </div>
-          <div class="expense-meta">
-            <span class="payer-badge">💳 {{ expense.payer_name }}</span>
-            <span class="participants-label">
-              参加: {{ getParticipantNames(expense.participant_ids) }}
-            </span>
-          </div>
-          <div v-if="expense.memo" class="expense-memo">{{ expense.memo }}</div>
-          <div class="expense-actions">
-            <button class="edit-btn" @click="openEditModal(expense)">編集</button>
-            <button class="delete-btn" @click="deleteExpense(expense.id)">削除</button>
-          </div>
+        <div class="expense-meta">
+          <span class="payer-badge">💳 {{ expense.payer_name }}</span>
+          <span class="participants-label">
+            参加: {{ getParticipantNames(expense.participant_ids) }}
+          </span>
+        </div>
+        <!-- スポット名（旅行全体ビューのときだけ表示） -->
+        <div v-if="selectedSpotId === null && expense.spot_name" class="expense-spot-tag">
+          📍 {{ expense.spot_name }}
+        </div>
+        <div v-if="expense.memo" class="expense-memo">{{ expense.memo }}</div>
+        <div class="expense-actions">
+          <button class="edit-btn" @click="openEditModal(expense)">編集</button>
+          <button class="delete-btn" @click="deleteExpense(expense.id)">削除</button>
         </div>
       </div>
     </div>
@@ -73,7 +91,6 @@
       <div v-if="loadingSettlement" class="loading">計算中...</div>
 
       <template v-else-if="settlementResult">
-        <!-- 収支サマリ: 各メンバーの純収支（正=受取、負=支払） -->
         <section class="settlement-section">
           <h2>収支サマリ</h2>
           <div
@@ -89,7 +106,6 @@
           </div>
         </section>
 
-        <!-- 精算リスト: 誰が誰にいくら払うか -->
         <section class="settlement-section">
           <h2>精算リスト</h2>
           <div v-if="settlementResult.settlements.length === 0" class="empty-msg">
@@ -112,10 +128,6 @@
     </div>
 
     <!-- ===== 費用追加・編集モーダル ===== -->
-    <!--
-      v-if でモーダルの表示/非表示を切り替える。
-      @click.self: オーバーレイ自体をクリックしたときだけ閉じる（カード内のクリックは無視）。
-    -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal">
         <h2>{{ editingExpense ? '費用を編集' : '費用を追加' }}</h2>
@@ -140,12 +152,16 @@
           </div>
         </div>
 
-        <!-- スポット選択: どのスポットの費用かを関連づける（任意）。 -->
+        <!--
+          スポット選択。
+          デフォルトは selectedSpotId（フィルターで選択中のスポット）。
+          旅行全体を選んでいる場合は null（旅行全体）がデフォルト。
+        -->
         <div class="form-group">
           <label>スポット</label>
           <select v-model="form.spotId">
-            <option :value="null">旅行全体（スポット指定なし）</option>
-            <option v-for="s in spots" :key="s.id" :value="s.id">{{ s.name }}</option>
+            <option :value="null">🌐 旅行全体（スポット指定なし）</option>
+            <option v-for="s in spots" :key="s.id" :value="s.id">📍 {{ s.name }}</option>
           </select>
         </div>
 
@@ -158,17 +174,9 @@
 
         <div class="form-group">
           <label>参加者（割り勘対象）<span class="required">*</span></label>
-          <!--
-            v-model で配列を使うと、チェックボックスは自動で value を push/splice してくれる。
-            Vue のリアクティビティのおかげで、チェック状態が form.participantIds に反映される。
-          -->
           <div class="checkbox-group">
             <label v-for="m in members" :key="m.id" class="checkbox-label">
-              <input
-                type="checkbox"
-                :value="m.id"
-                v-model="form.participantIds"
-              />
+              <input type="checkbox" :value="m.id" v-model="form.participantIds" />
               {{ m.user_name }}
             </label>
           </div>
@@ -200,93 +208,82 @@
 </template>
 
 <script setup lang="ts">
-/**
- * ExpenseView.vue
- *
- * 【Vue の仕組み】
- * <script setup> は Vue 3 の Composition API のシュガーシンタックス。
- * setup() 関数の中身を直接書けて、return 不要でテンプレートから使える。
- *
- * 【Django との連携】
- * - expensesApi.list()       → GET  /api/trips/<hash>/expenses/
- * - expensesApi.create()     → POST /api/trips/<hash>/expenses/
- * - expensesApi.update()     → PATCH /api/expenses/<id>/
- * - expensesApi.delete()     → DELETE /api/expenses/<id>/
- * - expensesApi.settlement() → GET /api/trips/<hash>/settlement/
- */
-
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { membersApi, expensesApi, tripsApi, type TripMember, type Expense, type SettlementResult, type Spot } from '@/api/trips'
+import {
+  membersApi, expensesApi, tripsApi,
+  type Trip, type TripMember, type Expense, type SettlementResult, type Spot
+} from '@/api/trips'
 
 const route = useRoute()
 const router = useRouter()
-
-// URLパラメータ :hashUrl を取得する。
 const hashUrl = route.params.hashUrl as string
 
-// --- リアクティブな状態 ---
-// ref(): プリミティブ値（string/number/boolean）をリアクティブにするラッパー。
-// .value でアクセスする。テンプレート内では .value 不要。
+// --- 状態 ---
 const activeTab = ref<'expenses' | 'settlement'>('expenses')
 const expenses = ref<Expense[]>([])
 const members = ref<TripMember[]>([])
 const spots = ref<Spot[]>([])
+const trip = ref<Trip | null>(null)
 const settlementResult = ref<SettlementResult | null>(null)
 const loadingSettlement = ref(false)
 const showModal = ref(false)
 const saving = ref(false)
 const editingExpense = ref<Expense | null>(null)
 
-// defaultForm: spotId フィールドを追加。null = スポット指定なし（旅行全体）。
+// 選択中のスポットフィルター。null = 旅行全体（デフォルト）。
+const selectedSpotId = ref<string | null>(null)
+
+// --- computed ---
+
+// 選択中のスポット名を返す（フィルターヘッダー表示用）。
+const selectedSpotName = computed(() => {
+  if (selectedSpotId.value === null) return ''
+  return spots.value.find(s => s.id === selectedSpotId.value)?.name ?? ''
+})
+
+// 選択中のスポットフィルターに合わせて費用を絞り込む。
+// 旅行全体（null）の場合はすべての費用を表示する。
+const filteredExpenses = computed(() => {
+  if (selectedSpotId.value === null) {
+    return expenses.value
+  }
+  return expenses.value.filter(e => e.spot === selectedSpotId.value)
+})
+
+// 現在表示中の費用の合計金額。
+const currentTotal = computed(() => {
+  const sum = filteredExpenses.value.reduce((acc, e) => acc + Number(e.amount), 0)
+  return sum.toLocaleString()
+})
+
+// --- フォーム ---
 const defaultForm = () => ({
   name: '',
   amount: '',
-  currency: 'JPY',
+  // 選択中スポットの通貨 → スポット未設定なら旅行の通貨 → フォールバック JPY
+  currency: contextCurrency(selectedSpotId.value),
   payer: null as number | null,
   participantIds: [] as number[],
   date: '',
   memo: '',
-  spotId: null as string | null,
+  // フィルターで選択中のスポットをデフォルトにする。
+  // 旅行全体ビューなら null（旅行全体）、スポットビューならそのスポットID。
+  spotId: selectedSpotId.value as string | null,
 })
 
-// groupedExpenses: 費用をスポット別にグループ化した computed。
-// スポットなし → 「旅行全体」グループ、スポットあり → スポット名グループ。
-const groupedExpenses = computed(() => {
-  const groups: Record<string, { key: string; label: string; items: Expense[]; total: string }> = {}
-
-  for (const exp of expenses.value) {
-    const key = exp.spot ?? '__trip__'
-    const label = exp.spot_name ?? '🌐 旅行全体'
-    if (!groups[key]) {
-      groups[key] = { key, label, items: [], total: '0' }
-    }
-    groups[key].items.push(exp)
-  }
-
-  // 各グループの合計金額を計算する。
-  for (const g of Object.values(groups)) {
-    const sum = g.items.reduce((acc, e) => acc + Number(e.amount), 0)
-    g.total = sum.toLocaleString()
-  }
-
-  // スポットなし（旅行全体）を先頭に、以降はスポット名順に並べる。
-  return Object.values(groups).sort((a, b) => {
-    if (a.key === '__trip__') return -1
-    if (b.key === '__trip__') return 1
-    return a.label.localeCompare(b.label, 'ja')
-  })
-})
-
-// reactive でなく ref を使う理由: オブジェクト全体を入れ替える（= defaultForm()）ため。
-// reactive の場合は Object.assign でプロパティを更新しないといけない。
 const form = ref(defaultForm())
 
+// モーダル内でスポットを変更したとき、通貨を自動切り替えする。
+// 編集中（editingExpense あり）の場合は上書きしない。
+watch(() => form.value.spotId, (newSpotId) => {
+  if (!editingExpense.value) {
+    form.value.currency = contextCurrency(newSpotId)
+  }
+})
+
 // --- 初期データ取得 ---
-// onMounted: コンポーネントがDOMにマウントされた直後に実行される。
-// ページ表示時に費用一覧とメンバー一覧を並行して取得する。
 onMounted(async () => {
-  // 費用・メンバー・スポット一覧を並行取得する。
   const [expRes, memRes, tripRes] = await Promise.all([
     expensesApi.list(hashUrl),
     membersApi.list(hashUrl),
@@ -294,30 +291,41 @@ onMounted(async () => {
   ])
   expenses.value = expRes.data
   members.value = memRes.data
-  // Trip に含まれるスポット一覧をそのまま使う（別途 spotsApi を呼ばない）。
+  trip.value = tripRes.data
   spots.value = tripRes.data.spots
 })
 
-// --- ユーティリティ ---
+// --- スポットフィルター切り替え ---
+function selectSpot(spotId: string | null) {
+  selectedSpotId.value = spotId
+}
 
-// 金額を3桁カンマ区切りでフォーマットする。
+// 現在のコンテキスト（スポット or 旅行）の通貨を返す。
+// スポットに通貨が設定されていればそれを、なければ旅行の通貨を使う。
+function contextCurrency(spotId: string | null): string {
+  if (spotId) {
+    const spot = spots.value.find(s => s.id === spotId)
+    if (spot?.currency) return spot.currency
+  }
+  return trip.value?.currency ?? 'JPY'
+}
+
+// --- ユーティリティ ---
 function formatAmount(amount: string | number): string {
   return Number(amount).toLocaleString()
 }
 
-// 参加者IDのリストから名前リストの文字列を生成する。
 function getParticipantNames(ids: number[]): string {
   return ids
     .map(id => members.value.find(m => m.id === id)?.user_name ?? '?')
     .join(', ')
 }
 
-// --- モーダル操作 ---
-
+// --- モーダル ---
 function openAddModal() {
   editingExpense.value = null
   form.value = defaultForm()
-  // デフォルトで全メンバーを参加者として選択しておく（BBumBBai と同じ挙動）。
+  // 全メンバーをデフォルトで参加者に選択する。
   form.value.participantIds = members.value.map(m => m.id)
   showModal.value = true
 }
@@ -342,31 +350,16 @@ function closeModal() {
   editingExpense.value = null
 }
 
-// --- CRUD 操作 ---
-
+// --- CRUD ---
 async function saveExpense() {
-  // バリデーション
-  if (!form.value.name.trim()) {
-    alert('費用名を入力してください。')
-    return
-  }
-  if (!form.value.amount || Number(form.value.amount) <= 0) {
-    alert('金額を入力してください。')
-    return
-  }
-  if (!form.value.payer) {
-    alert('支払者を選択してください。')
-    return
-  }
-  if (form.value.participantIds.length === 0) {
-    alert('参加者を1人以上選択してください。')
-    return
-  }
+  if (!form.value.name.trim()) { alert('費用名を入力してください。'); return }
+  if (!form.value.amount || Number(form.value.amount) <= 0) { alert('金額を入力してください。'); return }
+  if (!form.value.payer) { alert('支払者を選択してください。'); return }
+  if (form.value.participantIds.length === 0) { alert('参加者を1人以上選択してください。'); return }
 
   saving.value = true
   try {
     if (editingExpense.value) {
-      // 既存費用の更新（PATCH）。
       const { data } = await expensesApi.update(editingExpense.value.id, {
         name: form.value.name,
         amount: form.value.amount,
@@ -375,12 +368,11 @@ async function saveExpense() {
         date: form.value.date || null,
         memo: form.value.memo,
         participant_ids: form.value.participantIds,
+        spot: form.value.spotId,
       })
-      // 一覧の対応するアイテムを更新する（再取得しない分速い）。
       const idx = expenses.value.findIndex(e => e.id === editingExpense.value!.id)
       if (idx !== -1) expenses.value[idx] = data
     } else {
-      // 新規費用の登録（POST）。spot は任意。
       const { data } = await expensesApi.create(hashUrl, {
         name: form.value.name,
         amount: form.value.amount,
@@ -391,14 +383,12 @@ async function saveExpense() {
         participant_ids: form.value.participantIds,
         spot: form.value.spotId,
       })
-      // 一覧の末尾に追加する。
       expenses.value.push(data)
     }
     closeModal()
   } catch (e) {
     alert('保存に失敗しました。')
   } finally {
-    // finally: 成功・失敗問わず必ず実行される（ローディング状態をリセット）。
     saving.value = false
   }
 }
@@ -406,14 +396,11 @@ async function saveExpense() {
 async function deleteExpense(id: string) {
   if (!confirm('この費用を削除しますか？')) return
   await expensesApi.delete(id)
-  // filter: 削除した費用以外のリストを新しい配列として作成し、リアクティブ更新する。
   expenses.value = expenses.value.filter(e => e.id !== id)
 }
 
-// --- 精算タブに切り替えたときに計算を取得する ---
 async function switchToSettlement() {
   activeTab.value = 'settlement'
-  // まだ取得していない場合だけAPIを呼ぶ。
   if (!settlementResult.value) {
     loadingSettlement.value = true
     try {
@@ -427,8 +414,6 @@ async function switchToSettlement() {
 </script>
 
 <style scoped>
-/* scoped: このコンポーネントのDOM要素にだけスタイルが適用される。他のコンポーネントに影響しない。 */
-
 .expense-page {
   max-width: 600px;
   margin: 0 auto;
@@ -460,7 +445,6 @@ async function switchToSettlement() {
   cursor: pointer;
   padding: 4px 8px;
 }
-
 .back-btn:hover { text-decoration: underline; }
 
 /* タブ */
@@ -469,7 +453,6 @@ async function switchToSettlement() {
   border-bottom: 2px solid #eee;
   margin: 16px 0 0;
 }
-
 .tabs button {
   flex: 1;
   padding: 10px;
@@ -482,57 +465,77 @@ async function switchToSettlement() {
   margin-bottom: -2px;
   transition: color 0.2s, border-color 0.2s;
 }
-
 .tabs button.active {
   color: #42b983;
   border-bottom-color: #42b983;
   font-weight: 600;
 }
 
-/* 費用追加ボタン */
-.add-btn-row {
+/* スポットフィルターバー */
+.spot-filter-bar {
   display: flex;
-  justify-content: flex-end;
-  padding: 12px 0;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 14px 0 10px;
+  scrollbar-width: none; /* Firefox */
+}
+.spot-filter-bar::-webkit-scrollbar { display: none; } /* Chrome */
+
+.spot-filter-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1.5px solid #ddd;
+  border-radius: 20px;
+  background: #fff;
+  color: #555;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.spot-filter-btn:hover {
+  border-color: #42b983;
+  color: #42b983;
+}
+.spot-filter-btn.active {
+  background: #42b983;
+  border-color: #42b983;
+  color: #fff;
+  font-weight: 600;
 }
 
+/* 現在のスコープヘッダー */
+.current-scope-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 12px;
+}
+.scope-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #2c3e50;
+  flex: 1;
+}
+.scope-total {
+  font-size: 0.85rem;
+  color: #42b983;
+  font-weight: 600;
+}
 .add-btn {
   background: #42b983;
   color: #fff;
   border: none;
   border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 0.9rem;
+  padding: 7px 14px;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: background 0.2s;
+  white-space: nowrap;
 }
 .add-btn:hover { background: #369f73; }
-
-/* スポット別グループ */
-.expense-group {
-  margin-bottom: 20px;
-}
-
-.group-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 4px;
-  margin-bottom: 6px;
-  border-bottom: 2px solid #e8e8e8;
-}
-
-.group-label {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #2c3e50;
-}
-
-.group-total {
-  font-size: 0.82rem;
-  color: #42b983;
-  font-weight: 600;
-}
 
 /* 費用カード */
 .expense-card {
@@ -543,31 +546,15 @@ async function switchToSettlement() {
   margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(0,0,0,.05);
 }
-
 .expense-main {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 6px;
 }
-
-.expense-name {
-  font-weight: 600;
-  font-size: 1rem;
-}
-
-.expense-date {
-  font-size: 0.78rem;
-  color: #999;
-  margin-left: 8px;
-}
-
-.expense-amount {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #e74c3c;
-}
-
+.expense-name { font-weight: 600; font-size: 1rem; }
+.expense-date { font-size: 0.78rem; color: #999; margin-left: 8px; }
+.expense-amount { font-size: 1.1rem; font-weight: 700; color: #e74c3c; }
 .expense-meta {
   display: flex;
   flex-wrap: wrap;
@@ -575,7 +562,6 @@ async function switchToSettlement() {
   font-size: 0.8rem;
   color: #555;
 }
-
 .payer-badge {
   background: #f0f9f5;
   color: #42b983;
@@ -583,9 +569,16 @@ async function switchToSettlement() {
   border-radius: 12px;
   font-weight: 500;
 }
-
 .participants-label { color: #777; }
-
+.expense-spot-tag {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: #888;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
 .expense-memo {
   font-size: 0.82rem;
   color: #777;
@@ -593,14 +586,12 @@ async function switchToSettlement() {
   padding-top: 6px;
   border-top: 1px dashed #eee;
 }
-
 .expense-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
 }
-
 .edit-btn, .delete-btn {
   border: none;
   border-radius: 6px;
@@ -614,16 +605,13 @@ async function switchToSettlement() {
 .delete-btn:hover { background: #f5c6c6; }
 
 /* 精算 */
-.settlement-section {
-  margin: 20px 0;
-}
+.settlement-section { margin: 20px 0; }
 .settlement-section h2 {
   font-size: 1rem;
   font-weight: 600;
   color: #2c3e50;
   margin-bottom: 10px;
 }
-
 .balance-row {
   display: flex;
   justify-content: space-between;
@@ -638,7 +626,6 @@ async function switchToSettlement() {
 .balance-amount { font-weight: 600; }
 .balance-row.positive .balance-amount { color: #42b983; }
 .balance-row.negative .balance-amount { color: #e74c3c; }
-
 .settlement-row {
   display: flex;
   align-items: center;
@@ -665,7 +652,6 @@ async function switchToSettlement() {
   z-index: 1000;
   padding: 16px;
 }
-
 .modal {
   background: #fff;
   border-radius: 14px;
@@ -676,18 +662,13 @@ async function switchToSettlement() {
   overflow-y: auto;
   box-shadow: 0 8px 30px rgba(0,0,0,.15);
 }
-
 .modal h2 {
   font-size: 1.1rem;
   font-weight: 700;
   margin: 0 0 20px;
   color: #2c3e50;
 }
-
-.form-group {
-  margin-bottom: 14px;
-}
-
+.form-group { margin-bottom: 14px; }
 .form-group label {
   display: block;
   font-size: 0.85rem;
@@ -695,9 +676,7 @@ async function switchToSettlement() {
   color: #555;
   margin-bottom: 5px;
 }
-
 .required { color: #e74c3c; }
-
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -709,27 +688,15 @@ async function switchToSettlement() {
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
-
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: #42b983;
 }
-
-.form-row {
-  display: flex;
-  gap: 12px;
-}
+.form-row { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
-
-/* チェックボックスグループ */
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .checkbox-label {
   display: flex;
   align-items: center;
@@ -740,21 +707,18 @@ async function switchToSettlement() {
   background: #f5f5f5;
   border-radius: 8px;
 }
-
 .checkbox-label input[type="checkbox"] {
   width: auto;
   border: none;
   padding: 0;
   accent-color: #42b983;
 }
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
 }
-
 .cancel-btn {
   background: #f0f0f0;
   color: #555;
@@ -764,7 +728,6 @@ async function switchToSettlement() {
   cursor: pointer;
 }
 .cancel-btn:hover { background: #e0e0e0; }
-
 .save-btn {
   background: #42b983;
   color: #fff;
@@ -776,14 +739,12 @@ async function switchToSettlement() {
 }
 .save-btn:hover { background: #369f73; }
 .save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
 .empty-msg {
   text-align: center;
   color: #aaa;
   padding: 40px 0;
   font-size: 0.95rem;
 }
-
 .loading {
   text-align: center;
   color: #aaa;
