@@ -71,7 +71,7 @@
         <div class="expense-meta">
           <span class="payer-badge">💳 {{ expense.payer_name }}</span>
           <span class="participants-label">
-            {{ t('tripDetail.participants') }}: {{ getParticipantNames(expense.participant_ids) }}
+            {{ t('tripDetail.participants') }}: {{ expense.participant_names.join(', ') }}
           </span>
         </div>
         <!-- スポット名（旅行全体ビューのときだけ表示） -->
