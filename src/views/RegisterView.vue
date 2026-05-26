@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/trips'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -33,7 +36,7 @@ async function sendCode() {
     step.value = 2
     startResendCooldown()
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'メール送信に失敗しました。'
+    error.value = e.response?.data?.detail || t('auth.sendFailed')
   } finally {
     loading.value = false
   }
@@ -48,7 +51,7 @@ async function verifyCode() {
     verificationToken.value = data.verification_token
     step.value = 3
   } catch (e: any) {
-    error.value = e.response?.data?.detail || '認証に失敗しました。'
+    error.value = e.response?.data?.detail || t('auth.verifyFailed')
     code.value = ''
   } finally {
     loading.value = false
@@ -59,7 +62,7 @@ async function verifyCode() {
 async function handleRegister() {
   error.value = ''
   if (password.value !== passwordConfirm.value) {
-    error.value = 'パスワードが一致しません。'
+    error.value = t('auth.passwordMismatch')
     return
   }
   loading.value = true
@@ -71,9 +74,9 @@ async function handleRegister() {
     const data = e.response?.data
     if (data && typeof data === 'object') {
       const msg = Object.values(data).flat().join(' / ')
-      error.value = msg || '登録に失敗しました。'
+      error.value = msg || t('auth.registerFailed')
     } else {
-      error.value = '登録に失敗しました。'
+      error.value = t('auth.registerFailed')
     }
   } finally {
     loading.value = false
@@ -98,7 +101,7 @@ async function resendCode() {
     startResendCooldown()
     error.value = ''
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'メール送信に失敗しました。'
+    error.value = e.response?.data?.detail || t('auth.sendFailed')
   } finally {
     loading.value = false
   }
@@ -195,8 +198,8 @@ async function resendCode() {
         </p>
         <form @submit.prevent="handleRegister">
           <div class="field">
-            <label>ユーザー名</label>
-            <input v-model="username" type="text" placeholder="ユーザー名" required />
+            <label>ニックネーム</label>
+            <input v-model="username" type="text" placeholder="ニックネーム" required />
           </div>
           <div class="field">
             <label>パスワード（8文字以上）</label>

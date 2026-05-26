@@ -140,56 +140,52 @@ async function deleteTrip() {
           <div class="field-row">
             <div class="field">
               <label for="m_start_date" class="date-label" @click.prevent="($refs.mStartDate as HTMLInputElement).showPicker()">出発日 *</label>
-              <input id="m_start_date" ref="mStartDate" v-model="form.start_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" />
+              <div class="date-input-wrap">
+                <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <input id="m_start_date" ref="mStartDate" v-model="form.start_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+              </div>
             </div>
             <div class="field">
               <label for="m_end_date" class="date-label" @click.prevent="($refs.mEndDate as HTMLInputElement).showPicker()">帰宅日 *</label>
-              <input id="m_end_date" ref="mEndDate" v-model="form.end_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" />
+              <div class="date-input-wrap">
+                <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <input id="m_end_date" ref="mEndDate" v-model="form.end_date" type="date" required @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+              </div>
             </div>
           </div>
           <div class="field">
             <label>説明</label>
             <textarea v-model="form.description" rows="3" placeholder="旅行の概要..."></textarea>
           </div>
-          <div class="field-row">
-            <div class="field">
-              <label>通貨</label>
-              <select v-model="form.currency">
-                <option value="JPY">JPY（円）</option>
-                <option value="KRW">KRW（ウォン）</option>
-                <option value="USD">USD（ドル）</option>
-              </select>
+          <div class="field">
+            <label>通貨</label>
+            <div class="btn-group">
+              <button type="button" :class="['group-btn', { active: form.currency === 'JPY' }]" @click="form.currency = 'JPY'">JPY（円）</button>
+              <button type="button" :class="['group-btn', { active: form.currency === 'KRW' }]" @click="form.currency = 'KRW'">KRW（ウォン）</button>
+              <button type="button" :class="['group-btn', { active: form.currency === 'USD' }]" @click="form.currency = 'USD'">USD（ドル）</button>
             </div>
-            <div class="field">
-              <label>公開設定</label>
-              <select v-model="form.visibility">
-                <option value="public">公開</option>
-                <option value="friends">友達のみ</option>
-                <option value="private">非公開</option>
-              </select>
+          </div>
+          <div class="field">
+            <label>公開設定</label>
+            <div class="btn-group">
+              <button
+                type="button"
+                :class="['group-btn', { active: form.visibility === 'public' }]"
+                @click="form.visibility = 'public'; form.pin_enabled = false"
+              >🌐 公開</button>
+              <button
+                type="button"
+                :class="['group-btn', { active: form.visibility === 'private' }]"
+                @click="form.visibility = 'private'; form.pin_enabled = true"
+              >🔒 非公開（PIN）</button>
             </div>
           </div>
 
-          <div class="field pin-field">
-            <label>PIN保護</label>
-            <div class="pin-toggle-row">
-              <!--
-                type="button": submit ではなくボタンとして動作させる。
-                type 未指定だと form 内でデフォルトが submit になり、クリックでフォームが送信されてしまう。
-                :class="{ active: form.pin_enabled }": pin_enabled が true のとき active クラスを付与。
-              -->
-              <button
-                type="button"
-                class="pin-toggle"
-                :class="{ active: form.pin_enabled }"
-                @click="form.pin_enabled = !form.pin_enabled"
-              >
-                {{ form.pin_enabled ? '🔒 PIN有効' : '🔓 PIN無効' }}
-              </button>
-              <span class="pin-hint">ONにすると旅行を開く時にPINが必要になります</span>
-            </div>
-            <!-- v-if="form.pin_enabled": PIN有効のときだけ入力欄を表示する。 -->
-            <div v-if="form.pin_enabled" class="pin-input-row">
+          <!-- 非公開選択時のみPIN入力欄を表示 -->
+          <div v-if="form.visibility === 'private'" class="field pin-field">
+            <label>🔒 PINコード</label>
+            <p class="pin-hint">旅行を開く際にこのPINの入力が必要になります。</p>
+            <div class="pin-input-row">
               <input
                 v-model="form.pin"
                 type="tel"
@@ -198,6 +194,7 @@ async function deleteTrip() {
                 placeholder="4桁のPINを入力"
                 class="pin-number-input"
                 @input="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
+                @compositionend="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
               />
               <span class="pin-input-hint">空欄の場合は現在のPINを維持</span>
             </div>
@@ -250,12 +247,31 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .card h2 { margin: 0 0 20px; font-size: 1.1rem; color: #2c3e50; }
 
 .field { margin-bottom: 16px; }
-.field-row { display: flex; gap: 14px; }
-.field-row .field { flex: 1; }
-label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 6px; }
+.btn-group {
+  display: flex;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.group-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: none;
+  border-right: 1px solid #ddd;
+  background: #fff;
+  font-size: 0.85rem;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.group-btn:last-child { border-right: none; }
+.group-btn:hover { background: #f5f5f5; }
+.group-btn.active { background: #42b983; color: #fff; font-weight: 600; }
 .date-label { cursor: pointer; user-select: none; }
 .date-label:hover { color: #42b983; }
-input[type="text"], input[type="date"], textarea, select {
+input[type="text"], textarea, select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #ddd;
@@ -264,6 +280,42 @@ input[type="text"], input[type="date"], textarea, select {
   box-sizing: border-box;
 }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #42b983; }
+
+/* 日付入力 カスタムデザイン */
+.date-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-icon {
+  position: absolute;
+  right: 12px;
+  color: #42b983;
+  pointer-events: none;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.date-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.date-input:focus { outline: none; border-color: #42b983; }
+.date-input:hover { border-color: #42b983; }
+/* ネイティブのカレンダーアイコンを非表示 */
+.date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  width: 40px;
+  height: 100%;
+  cursor: pointer;
+}
 
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
 .save-success { color: #42b983; font-size: 0.9rem; }
@@ -299,22 +351,14 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #42b983
 .btn-primary:hover { background: #369870; }
 .btn-primary:disabled { background: #a0d9bf; cursor: not-allowed; }
 
-.pin-field { border: 1px solid #e0e0e0; border-radius: 10px; padding: 14px 16px; background: #fafafa; }
-.pin-toggle-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.pin-toggle {
-  padding: 8px 18px;
-  border-radius: 20px;
-  border: 2px solid #ddd;
-  background: #fff;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: bold;
-  color: #888;
-  transition: all 0.2s;
+.pin-field {
+  border: 1px solid #b8e0cc;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #f4faf7;
 }
-.pin-toggle.active { border-color: #42b983; background: #e8f5e9; color: #42b983; }
-.pin-hint { font-size: 0.8rem; color: #aaa; }
-.pin-input-row { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pin-hint { font-size: 0.82rem; color: #888; margin: 4px 0 12px; }
+.pin-input-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pin-number-input {
   width: 160px;
   padding: 10px 14px;
@@ -347,6 +391,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #42b983
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(-16px); }
 
 @media (max-width: 600px) {
-  .field-row { flex-direction: column; gap: 0; }
+  .card { padding: 20px 16px; }
+  .group-btn { font-size: 0.8rem; padding: 8px 4px; }
 }
 </style>

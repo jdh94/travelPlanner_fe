@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useTripsStore } from '@/stores/trips'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const tripsStore = useTripsStore()
@@ -15,7 +17,13 @@ onMounted(() => {
 })
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('ja-JP')
+  const localeMap: Record<string, string> = { ko: 'ko-KR', ja: 'ja-JP', en: 'en-US' }
+  return new Date(date).toLocaleDateString(localeMap[locale.value] ?? 'en-US')
+}
+
+function visibilityLabel(v: string) {
+  if (v === 'public') return t('common.visibility.public')
+  return t('common.visibility.private')
 }
 </script>
 
@@ -24,15 +32,18 @@ function formatDate(date: string) {
     <!-- ヘッダー -->
     <header class="header">
       <div class="header-inner">
-        <h1 class="logo">TravelPlaner</h1>
+        <RouterLink to="/" class="logo">TravelPlanner</RouterLink>
         <nav class="nav">
           <template v-if="auth.isLoggedIn">
-            <span class="username">{{ auth.user?.username }}</span>
-            <button class="btn-outline" @click="auth.logout">ログアウト</button>
+            <RouterLink to="/account" class="user-chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>{{ auth.user?.username }}</span>
+            </RouterLink>
+            <button class="btn-logout" @click="auth.logout">{{ t('nav.logout') }}</button>
           </template>
           <template v-else>
-            <RouterLink to="/login" class="btn-outline">ログイン</RouterLink>
-            <RouterLink to="/register" class="btn-primary">新規登録</RouterLink>
+            <RouterLink to="/login" class="btn-outline">{{ t('nav.login') }}</RouterLink>
+            <RouterLink to="/register" class="btn-primary">{{ t('nav.register') }}</RouterLink>
           </template>
         </nav>
       </div>
@@ -43,26 +54,52 @@ function formatDate(date: string) {
       <!-- 未ログイン：ヒーロー -->
       <template v-if="!auth.isLoggedIn">
         <div class="hero">
-          <h2>旅の計画を、最高の体験に。</h2>
-          <p>友達・家族と旅行プランを共同作成・URLシェアできるプラットフォーム</p>
+          <div class="hero-badge">{{ t('home.heroBadge') }}</div>
+          <h2>{{ t('home.tagline') }}</h2>
+          <p>{{ t('home.description') }}</p>
           <div class="hero-actions">
-            <RouterLink to="/register" class="btn-primary btn-large">無料で始める</RouterLink>
-            <RouterLink to="/login" class="btn-outline btn-large">ログイン</RouterLink>
+            <RouterLink to="/register" class="btn-primary btn-large">{{ t('home.startFree') }}</RouterLink>
+          </div>
+        </div>
+
+        <div class="features">
+          <div class="feature-card">
+            <div class="feature-icon">🗺️</div>
+            <h3>{{ t('home.feature1Title') }}</h3>
+            <p>{{ t('home.feature1Desc') }}</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">👥</div>
+            <h3>{{ t('home.feature2Title') }}</h3>
+            <p>{{ t('home.feature2Desc') }}</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💰</div>
+            <h3>{{ t('home.feature3Title') }}</h3>
+            <p>{{ t('home.feature3Desc') }}</p>
           </div>
         </div>
       </template>
 
       <!-- ログイン済み -->
       <template v-else>
-        <div class="page-header">
-          <h2>マイトリップ</h2>
-          <RouterLink to="/trips/new" class="btn-primary">+ 新規旅行</RouterLink>
+        <div class="trips-section-header">
+          <div class="trips-title-row">
+            <div>
+              <p class="trips-greeting">{{ t('home.greeting', { name: auth.user?.username }) }}</p>
+              <h2>{{ t('nav.myTrips') }}</h2>
+            </div>
+            <RouterLink to="/trips/new" class="btn-new-trip">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              {{ t('tripList.newTrip') }}
+            </RouterLink>
+          </div>
         </div>
 
-        <div v-if="tripsStore.loading" class="loading">読み込み中...</div>
+        <div v-if="tripsStore.loading" class="loading">{{ t('common.loading') }}</div>
 
         <div v-else-if="tripsStore.trips.length === 0" class="empty">
-          <p>旅行プランがまだありません。<br>最初の旅行を作成しましょう！</p>
+          <p style="white-space: pre-line">{{ t('tripList.empty') }}</p>
         </div>
 
         <div v-else class="trip-grid">
@@ -74,15 +111,13 @@ function formatDate(date: string) {
           >
             <div class="trip-card-header">
               <h3>{{ trip.title }}</h3>
-              <span class="visibility-badge">
-                {{ trip.visibility === 'public' ? '公開' : trip.visibility === 'friends' ? '友達のみ' : '非公開' }}
-              </span>
+              <span class="visibility-badge">{{ visibilityLabel(trip.visibility) }}</span>
             </div>
             <p class="dates">{{ formatDate(trip.start_date) }} 〜 {{ formatDate(trip.end_date) }}</p>
             <p v-if="trip.description" class="desc">{{ trip.description }}</p>
             <div class="trip-meta">
-              <span>{{ trip.spots.length }} スポット</span>
-              <span>{{ trip.members.length }} メンバー</span>
+              <span>{{ trip.spots.length }} {{ t('home.spots') }}</span>
+              <span>{{ trip.members.length }} {{ t('home.members') }}</span>
             </div>
           </div>
         </div>
@@ -95,13 +130,14 @@ function formatDate(date: string) {
 <style scoped>
 .home { min-height: 100vh; background: #f5f7fa; }
 
-/* ヘッダー：全幅帯 + 内側をmax-widthで中央揃え */
+/* ヘッダー */
 .header {
   background: #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  position: sticky; top: 0; z-index: 10;
 }
 .header-inner {
-  max-width: 960px;
+  max-width: 1000px;
   margin: 0 auto;
   padding: 0 24px;
   height: 60px;
@@ -109,42 +145,123 @@ function formatDate(date: string) {
   align-items: center;
   justify-content: space-between;
 }
-.logo { font-size: 1.4rem; color: #42b983; margin: 0; }
+.logo { font-size: 1.4rem; color: #42b983; margin: 0; text-decoration: none; font-weight: 700; }
 .nav { display: flex; align-items: center; gap: 12px; }
-.username { font-size: 0.9rem; color: #666; }
-
-/* メイン：ヘッダーと同じ幅で中央揃え */
-.main {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 40px 24px;
+.user-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: #f5f5f5; border-radius: 20px;
+  padding: 6px 14px 6px 10px;
+  font-size: 0.85rem; color: #444; font-weight: 500;
+  text-decoration: none; transition: background 0.15s;
 }
+.user-chip:hover { background: #e8f5e9; color: #42b983; }
+.user-chip svg { color: #42b983; flex-shrink: 0; }
+.btn-logout {
+  background: none; border: 1px solid #ddd; color: #888;
+  padding: 6px 14px; border-radius: 20px; cursor: pointer;
+  font-size: 0.85rem; transition: all 0.15s; white-space: nowrap;
+}
+.btn-logout:hover { border-color: #e74c3c; color: #e74c3c; background: #fff5f5; }
+
+/* ログイン済みトップ */
+.trips-section-header {
+  padding: 28px 0 20px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 24px;
+}
+.trips-title-row {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+}
+.trips-greeting { font-size: 0.85rem; color: #888; margin: 0 0 4px; }
+.trips-greeting strong { color: #42b983; }
+.trips-section-header h2 { font-size: 1.5rem; font-weight: 800; color: #1a2332; margin: 0; }
+.btn-new-trip {
+  display: flex; align-items: center; gap: 6px;
+  background: #42b983; color: #fff; border: none;
+  padding: 10px 20px; border-radius: 10px; cursor: pointer;
+  font-size: 0.9rem; font-weight: 600; text-decoration: none;
+  white-space: nowrap; flex-shrink: 0; transition: background 0.15s;
+}
+.btn-new-trip:hover { background: #369870; }
+
+@media (max-width: 480px) {
+  .user-chip span { display: none; }
+  .user-chip { padding: 6px 10px; }
+  .trips-section-header h2 { font-size: 1.2rem; }
+  .trips-greeting { font-size: 0.8rem; }
+}
+
+/* メイン */
+.main { max-width: 1000px; margin: 0 auto; padding: 0 24px 60px; }
 
 /* ヒーロー */
 .hero {
   text-align: center;
-  padding: 80px 20px;
+  padding: 80px 20px 60px;
+  background: linear-gradient(135deg, #e8f5e9 0%, #f0faf6 50%, #e3f2fd 100%);
+  margin: 0 -24px;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+.hero-badge {
+  display: inline-block;
+  background: rgba(66,185,131,0.12);
+  color: #42b983;
+  border: 1px solid rgba(66,185,131,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 24px;
+  letter-spacing: 0.02em;
 }
 .hero h2 {
-  font-size: 1.8rem;
-  color: #2c3e50;
-  margin-bottom: 12px;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: #1a2332;
+  margin-bottom: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 .hero p {
   font-size: 1.05rem;
-  color: #666;
-  margin-bottom: 32px;
+  color: #667;
+  margin-bottom: 36px;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.7;
 }
 .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 
-/* ログイン済みヘッダー */
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+/* フィーチャーカード */
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 48px;
 }
-.page-header h2 { font-size: 1.4rem; color: #2c3e50; margin: 0; }
+.feature-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.feature-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+.feature-icon { font-size: 2rem; margin-bottom: 14px; }
+.feature-card h3 { font-size: 1rem; font-weight: 700; color: #1a2332; margin: 0 0 8px; }
+.feature-card p { font-size: 0.85rem; color: #888; margin: 0; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .hero h2 { font-size: 1.7rem; }
+  .features { grid-template-columns: 1fr; gap: 12px; }
+  .feature-card { padding: 20px; text-align: left; display: flex; align-items: flex-start; gap: 16px; }
+  .feature-icon { font-size: 1.6rem; margin-bottom: 0; flex-shrink: 0; }
+}
+
+/* ログイン済みヘッダー */
 
 .loading { text-align: center; padding: 60px 0; color: #888; }
 
@@ -194,4 +311,11 @@ function formatDate(date: string) {
   text-decoration: none; display: inline-block;
 }
 .btn-outline:hover { background: #f0faf6; }
+.btn-secondary {
+  background: #fff; color: #42b983; border: 2px solid #42b983;
+  padding: 9px 20px; border-radius: 10px; cursor: pointer; font-size: 1rem;
+  text-decoration: none; display: inline-block; font-weight: 500;
+}
+.btn-secondary:hover { background: #42b983; color: #fff; }
+.btn-secondary.btn-large { padding: 14px 36px; }
 </style>

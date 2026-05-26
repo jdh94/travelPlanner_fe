@@ -3,7 +3,10 @@
 // ref().focus() は DOM 要素が存在してから呼ぶ必要があるため nextTick を使う。
 import { ref, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { tripsApi } from '@/api/trips'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
@@ -95,9 +98,9 @@ async function verifyPin() {
     digits.value = ['', '', '', '']
     if (attempts.value >= 3) {
       locked.value = true
-      error.value = 'PINを3回間違えました。しばらくお待ちください。'
+      error.value = t('pin.lockedOut')
     } else {
-      error.value = `PINが正しくありません。（残り${3 - attempts.value}回）`
+      error.value = t('pin.wrongPin', { remaining: 3 - attempts.value })
       focus(0)
     }
   } finally {
@@ -109,8 +112,8 @@ async function verifyPin() {
 <template>
   <div class="pin-page">
     <div class="pin-card">
-      <h1>PIN入力</h1>
-      <p class="subtitle">この旅行にはPINが設定されています</p>
+      <h1>{{ t('pin.title') }}</h1>
+      <p class="subtitle">{{ t('pin.description') }}</p>
 
       <div class="pin-inputs">
         <!--
@@ -138,10 +141,10 @@ async function verifyPin() {
         />
       </div>
 
-      <p v-if="loading" class="loading-text">確認中...</p>
+      <p v-if="loading" class="loading-text">{{ t('pin.submitting') }}</p>
       <p v-if="error" class="error">{{ error }}</p>
 
-      <RouterLink to="/" class="back-link">トップに戻る</RouterLink>
+      <RouterLink to="/" class="back-link">{{ t('tripDetail.backToHome') }}</RouterLink>
     </div>
   </div>
 </template>
