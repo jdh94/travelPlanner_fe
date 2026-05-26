@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -21,7 +23,7 @@ async function handleLogin() {
     router.push(redirect || '/')
   } catch (e: any) {
     const detail = e.response?.data?.detail
-    error.value = detail || 'メールアドレスまたはパスワードが正しくありません。'
+    error.value = detail || t('auth.loginError')
   } finally {
     loading.value = false
   }
@@ -31,24 +33,27 @@ async function handleLogin() {
 <template>
   <div class="auth-page">
     <div class="auth-card">
-      <h1>ログイン</h1>
+      <h1>{{ t('auth.loginTitle') }}</h1>
       <form @submit.prevent="handleLogin">
         <div class="field">
-          <label>メールアドレス</label>
+          <label>{{ t('auth.email') }}</label>
           <input v-model="email" type="email" placeholder="email@example.com" required />
         </div>
         <div class="field">
-          <label>パスワード</label>
-          <input v-model="password" type="password" placeholder="パスワード" required />
+          <label>{{ t('auth.password') }}</label>
+          <input v-model="password" type="password" :placeholder="t('auth.password')" required />
         </div>
         <p v-if="error" class="error">{{ error }}</p>
         <button type="submit" :disabled="loading" class="btn-primary">
-          {{ loading ? 'ログイン中...' : 'ログイン' }}
+          {{ loading ? t('auth.loggingIn') : t('auth.loginBtn') }}
         </button>
       </form>
       <p class="link-text">
-        アカウントをお持ちでない方は
-        <RouterLink to="/register">新規登録</RouterLink>
+        {{ t('auth.noAccount') }}
+        <RouterLink to="/register">{{ t('nav.register') }}</RouterLink>
+      </p>
+      <p class="link-text">
+        <RouterLink to="/forgot-password">{{ t('auth.forgotPassword') }}</RouterLink>
       </p>
     </div>
   </div>
@@ -76,50 +81,20 @@ h1 {
   color: #2c3e50;
   text-align: center;
 }
-.field {
-  margin-bottom: 16px;
-}
-label {
-  display: block;
-  font-size: 0.85rem;
-  color: #666;
-  margin-bottom: 4px;
-}
+.field { margin-bottom: 16px; }
+label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
 input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 1rem;
-  box-sizing: border-box;
+  width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+  border-radius: 8px; font-size: 1rem; box-sizing: border-box;
 }
-input:focus {
-  outline: none;
-  border-color: #42b983;
-}
-.error {
-  color: #e74c3c;
-  font-size: 0.85rem;
-  margin-bottom: 8px;
-}
+input:focus { outline: none; border-color: #42b983; }
+.error { color: #e74c3c; font-size: 0.85rem; margin-bottom: 8px; }
 .btn-primary {
-  width: 100%;
-  padding: 12px;
-  background: #42b983;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background 0.2s;
+  width: 100%; padding: 12px; background: #42b983; color: #fff;
+  border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: background 0.2s;
 }
 .btn-primary:hover:not(:disabled) { background: #369870; }
 .btn-primary:disabled { background: #a0d9bf; cursor: not-allowed; }
-.link-text {
-  text-align: center;
-  margin-top: 16px;
-  font-size: 0.9rem;
-  color: #666;
-}
+.link-text { text-align: center; margin-top: 16px; font-size: 0.9rem; color: #666; }
 .link-text a { color: #42b983; text-decoration: none; }
 </style>

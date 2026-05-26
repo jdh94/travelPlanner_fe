@@ -124,6 +124,7 @@ export interface Expense {
   date: string | null
   memo: string
   participant_ids: number[]
+  participant_names: string[]
   created_at: string
 }
 
@@ -151,6 +152,23 @@ export interface SettlementResult {
 }
 
 // expensesApi: 費用CRUD と精算計算のAPI関数をまとめたオブジェクト。
+export interface UserProfile {
+  id: number
+  username: string
+  email: string
+}
+
+export const accountApi = {
+  deactivate: () => api.post('/auth/deactivate/'),
+  changeUsername: (username: string) => api.post('/auth/change-username/', { username }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post('/auth/change-password/', { current_password: currentPassword, new_password: newPassword }),
+  sendReset: (email: string) =>
+    api.post('/auth/send-reset/', { email }),
+  verifyAndReset: (email: string, verificationToken: string, newPassword: string) =>
+    api.post('/auth/reset-password/', { email, verification_token: verificationToken, new_password: newPassword }),
+}
+
 export const expensesApi = {
   // 旅行の費用一覧を取得する。
   list: (hashUrl: string) => api.get<Expense[]>(`/trips/${hashUrl}/expenses/`),

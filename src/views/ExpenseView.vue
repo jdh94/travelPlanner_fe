@@ -9,10 +9,10 @@
     <!-- タブ切り替え -->
     <div class="tabs">
       <button :class="{ active: activeTab === 'expenses' }" @click="activeTab = 'expenses'">
-        費用一覧
+        {{ t('expense.tabExpenses') }}
       </button>
       <button :class="{ active: activeTab === 'settlement' }" @click="switchToSettlement">
-        精算
+        {{ t('expense.tabSettlement') }}
       </button>
     </div>
 
@@ -30,7 +30,7 @@
           :class="{ active: selectedSpotId === null }"
           @click="selectSpot(null)"
         >
-          🌐 旅行全体
+          {{ t('expense.allTrip') }}
         </button>
         <button
           v-for="spot in spots"
@@ -49,12 +49,12 @@
           {{ selectedSpotId === null ? '🌐 旅行全体' : '📍 ' + selectedSpotName }}
         </span>
         <span class="scope-total">合計 {{ currentTotal }} 円</span>
-        <button class="add-btn" @click="openAddModal">＋ 費用を追加</button>
+        <button class="add-btn" @click="openAddModal">{{ t('expense.addExpense') }}</button>
       </div>
 
       <!-- 費用がない場合 -->
       <div v-if="filteredExpenses.length === 0" class="empty-msg">
-        まだ費用が登録されていません。
+        {{ t('expense.noExpenses') }}
       </div>
 
       <!-- 費用カード一覧 -->
@@ -71,7 +71,7 @@
         <div class="expense-meta">
           <span class="payer-badge">💳 {{ expense.payer_name }}</span>
           <span class="participants-label">
-            参加: {{ getParticipantNames(expense.participant_ids) }}
+            {{ t('tripDetail.participants') }}: {{ getParticipantNames(expense.participant_ids) }}
           </span>
         </div>
         <!-- スポット名（旅行全体ビューのときだけ表示） -->
@@ -80,19 +80,19 @@
         </div>
         <div v-if="expense.memo" class="expense-memo">{{ expense.memo }}</div>
         <div class="expense-actions">
-          <button class="edit-btn" @click="openEditModal(expense)">編集</button>
-          <button class="delete-btn" @click="deleteExpense(expense.id)">削除</button>
+          <button class="edit-btn" @click="openEditModal(expense)">{{ t('expense.editBtn') }}</button>
+          <button class="delete-btn" @click="deleteExpense(expense.id)">{{ t('expense.deleteBtn') }}</button>
         </div>
       </div>
     </div>
 
     <!-- ===== 精算タブ ===== -->
     <div v-if="activeTab === 'settlement'">
-      <div v-if="loadingSettlement" class="loading">計算中...</div>
+      <div v-if="loadingSettlement" class="loading">{{ t('expense.calculating') }}</div>
 
       <template v-else-if="settlementResult">
         <section class="settlement-section">
-          <h2>収支サマリ</h2>
+          <h2>{{ t('expense.balanceSummary') }}</h2>
           <div
             v-for="b in settlementResult.balance_summary"
             :key="b.member_id"
@@ -107,9 +107,9 @@
         </section>
 
         <section class="settlement-section">
-          <h2>精算リスト</h2>
+          <h2>{{ t('expense.settlementList') }}</h2>
           <div v-if="settlementResult.settlements.length === 0" class="empty-msg">
-            精算不要です！
+            {{ t('expense.noSettlement') }}
           </div>
           <div
             v-for="(s, idx) in settlementResult.settlements"
@@ -124,56 +124,110 @@
             </span>
           </div>
         </section>
+
+        <!-- 計算過程 -->
+        <section class="settlement-section">
+          <button class="breakdown-toggle" @click="showBreakdown = !showBreakdown">
+            <span>📊 計算過程</span>
+            <svg
+              :style="{ transform: showBreakdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }"
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round"
+            ><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+
+          <div v-if="showBreakdown" class="breakdown-list">
+            <div v-for="person in personBreakdown" :key="person.member_id" class="breakdown-card">
+              <!-- ヘッダー: 名前 + 最終収支 -->
+              <div class="breakdown-header">
+                <div class="breakdown-avatar">{{ person.member_name.charAt(0).toUpperCase() }}</div>
+                <span class="breakdown-member-name">{{ person.member_name }}</span>
+                <span
+                  class="breakdown-final"
+                  :class="{ positive: person.balance > 0, negative: person.balance < 0 }"
+                >
+                  {{ person.balance > 0 ? '+' : '' }}{{ person.balance.toLocaleString() }} {{ person.currency }}
+                </span>
+              </div>
+
+              <!-- 計算式 -->
+              <div class="breakdown-formula-row">
+                <template v-for="(item, idx) in person.items" :key="idx">
+                  <span
+                    class="formula-term"
+                    :class="{ 'term-positive': item.amount >= 0, 'term-negative': item.amount < 0 }"
+                  >
+                    <span class="term-sign">{{ item.amount >= 0 ? (idx === 0 ? '' : '+') : '−' }}</span>
+                    <span class="term-value">{{ Math.abs(item.amount).toLocaleString() }}</span>
+                    <span class="term-label">{{ item.name }}</span>
+                  </span>
+                </template>
+                <span v-if="person.items.length === 0" class="formula-none">参加費用なし</span>
+                <template v-if="person.items.length > 0">
+                  <span class="formula-eq">=</span>
+                  <span
+                    class="formula-result"
+                    :class="{ positive: person.balance > 0, negative: person.balance < 0 }"
+                  >
+                    {{ person.balance > 0 ? '+' : '' }}{{ person.balance.toLocaleString() }} {{ person.currency }}
+                  </span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
       </template>
     </div>
 
     <!-- ===== 費用追加・編集モーダル ===== -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal">
-        <h2>{{ editingExpense ? '費用を編集' : '費用を追加' }}</h2>
+        <h2>{{ editingExpense ? t('expense.editTitle') : t('expense.addTitle') }}</h2>
 
         <div class="form-group">
-          <label>費用名 <span class="required">*</span></label>
-          <input v-model="form.name" type="text" placeholder="例: 夕食、交通費" />
+          <label>{{ t('expense.expenseName') }}</label>
+          <input v-model="form.name" type="text" :placeholder="t('expense.expenseNamePlaceholder')" />
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <label>金額 <span class="required">*</span></label>
-            <input v-model="form.amount" type="number" min="0" placeholder="0" />
+            <label>{{ t('expense.amount') }}</label>
+            <input
+              :value="form.amount ? formatAmount(form.amount) : ''"
+              type="tel"
+              inputmode="numeric"
+              placeholder="0"
+              @input="form.amount = ($event.target as HTMLInputElement).value.replace(/[^0-9]/g, '')"
+              @compositionend="form.amount = ($event.target as HTMLInputElement).value.replace(/[^0-9]/g, '')"
+            />
           </div>
           <div class="form-group">
-            <label>通貨</label>
+            <label>{{ t('expense.currency') }}</label>
             <select v-model="form.currency">
-              <option value="JPY">円 (JPY)</option>
-              <option value="KRW">ウォン (KRW)</option>
-              <option value="USD">ドル (USD)</option>
+              <option value="JPY">{{ t('common.currency.JPY') }}</option>
+              <option value="KRW">{{ t('common.currency.KRW') }}</option>
+              <option value="USD">{{ t('common.currency.USD') }}</option>
             </select>
           </div>
         </div>
 
-        <!--
-          スポット選択。
-          デフォルトは selectedSpotId（フィルターで選択中のスポット）。
-          旅行全体を選んでいる場合は null（旅行全体）がデフォルト。
-        -->
         <div class="form-group">
-          <label>スポット</label>
+          <label>{{ t('expense.spot') }}</label>
           <select v-model="form.spotId">
-            <option :value="null">🌐 旅行全体（スポット指定なし）</option>
+            <option :value="null">{{ t('expense.spotDefault') }}</option>
             <option v-for="s in spots" :key="s.id" :value="s.id">📍 {{ s.name }}</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label>支払者 <span class="required">*</span></label>
+          <label>{{ t('expense.payerLabel') }}</label>
           <select v-model="form.payer">
             <option v-for="m in members" :key="m.id" :value="m.id">{{ m.user_name }}</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label>参加者（割り勘対象）<span class="required">*</span></label>
+          <label>{{ t('expense.participantsLabel') }}</label>
           <div class="checkbox-group">
             <label v-for="m in members" :key="m.id" class="checkbox-label">
               <input type="checkbox" :value="m.id" v-model="form.participantIds" />
@@ -183,7 +237,7 @@
         </div>
 
         <div class="form-group">
-          <label>日付</label>
+          <label>{{ t('expense.date') }}</label>
           <input
             v-model="form.date"
             type="date"
@@ -192,14 +246,14 @@
         </div>
 
         <div class="form-group">
-          <label>メモ</label>
-          <textarea v-model="form.memo" placeholder="メモ（任意）" rows="2" />
+          <label>{{ t('expense.memoLabel') }}</label>
+          <textarea v-model="form.memo" :placeholder="t('expense.memoPlaceholder')" rows="2" />
         </div>
 
         <div class="modal-actions">
-          <button class="cancel-btn" @click="closeModal">キャンセル</button>
+          <button class="cancel-btn" @click="closeModal">{{ t('common.cancel') }}</button>
           <button class="save-btn" @click="saveExpense" :disabled="saving">
-            {{ saving ? '保存中...' : '保存' }}
+            {{ saving ? t('common.saving') : t('common.save') }}
           </button>
         </div>
       </div>
@@ -210,10 +264,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   membersApi, expensesApi, tripsApi,
   type Trip, type TripMember, type Expense, type SettlementResult, type Spot
 } from '@/api/trips'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -227,6 +284,7 @@ const spots = ref<Spot[]>([])
 const trip = ref<Trip | null>(null)
 const settlementResult = ref<SettlementResult | null>(null)
 const loadingSettlement = ref(false)
+const showBreakdown = ref(false)
 const showModal = ref(false)
 const saving = ref(false)
 const editingExpense = ref<Expense | null>(null)
@@ -321,6 +379,29 @@ function getParticipantNames(ids: number[]): string {
     .join(', ')
 }
 
+function getMemberName(id: number): string {
+  return members.value.find(m => m.id === id)?.user_name ?? '?'
+}
+
+// メンバーごとに各費用の貢献額を計算する。
+// 支払者: +（総額 − 自分の取り分）= 他の参加者から回収すべき金額
+// 非支払者: −自分の取り分 = 支払者に返すべき金額
+const personBreakdown = computed(() => {
+  if (!settlementResult.value) return []
+  return settlementResult.value.balance_summary.map(b => {
+    const items: { name: string; amount: number; currency: string }[] = []
+    expenses.value.forEach(exp => {
+      if (!exp.participant_ids.includes(b.member_id)) return
+      const share = Math.round(Number(exp.amount) / exp.participant_ids.length)
+      const net = exp.payer === b.member_id
+        ? Math.round(Number(exp.amount)) - share  // 立替分（自分の取り分を除く）
+        : -share                                   // 負担分（返す金額）
+      items.push({ name: exp.name, amount: net, currency: exp.currency })
+    })
+    return { ...b, items }
+  })
+})
+
 // --- モーダル ---
 function openAddModal() {
   editingExpense.value = null
@@ -352,10 +433,10 @@ function closeModal() {
 
 // --- CRUD ---
 async function saveExpense() {
-  if (!form.value.name.trim()) { alert('費用名を入力してください。'); return }
-  if (!form.value.amount || Number(form.value.amount) <= 0) { alert('金額を入力してください。'); return }
-  if (!form.value.payer) { alert('支払者を選択してください。'); return }
-  if (form.value.participantIds.length === 0) { alert('参加者を1人以上選択してください。'); return }
+  if (!form.value.name.trim()) { alert(t('expense.validName')); return }
+  if (!form.value.amount || Number(form.value.amount) <= 0) { alert(t('expense.validAmount')); return }
+  if (!form.value.payer) { alert(t('expense.validPayer')); return }
+  if (form.value.participantIds.length === 0) { alert(t('expense.validParticipants')); return }
 
   saving.value = true
   try {
@@ -387,14 +468,14 @@ async function saveExpense() {
     }
     closeModal()
   } catch (e) {
-    alert('保存に失敗しました。')
+    alert(t('expense.saveFail'))
   } finally {
     saving.value = false
   }
 }
 
 async function deleteExpense(id: string) {
-  if (!confirm('この費用を削除しますか？')) return
+  if (!confirm(t('expense.deleteConfirm'))) return
   await expensesApi.delete(id)
   expenses.value = expenses.value.filter(e => e.id !== id)
 }
@@ -640,6 +721,62 @@ async function switchToSettlement() {
 .arrow { color: #aaa; }
 .to-name { font-weight: 600; color: #42b983; }
 .settle-amount { margin-left: auto; font-weight: 700; color: #2c3e50; }
+
+/* 計算過程 */
+.breakdown-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: #f5f5f5; border: 1px solid #e0e0e0;
+  border-radius: 10px; padding: 10px 14px; cursor: pointer;
+  font-size: 0.92rem; font-weight: 600; color: #2c3e50;
+  transition: background 0.15s;
+}
+.breakdown-toggle:hover { background: #eee; }
+.breakdown-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+.breakdown-card {
+  background: #fff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.breakdown-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.breakdown-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: #42b983; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; font-weight: 700; flex-shrink: 0;
+}
+.breakdown-member-name { font-weight: 700; font-size: 0.95rem; color: #2c3e50; flex: 1; }
+.breakdown-final { font-weight: 700; font-size: 0.95rem; }
+.breakdown-final.positive { color: #42b983; }
+.breakdown-final.negative { color: #e74c3c; }
+
+/* 計算式の行 */
+.breakdown-formula-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  background: #f8f8f8; border-radius: 8px; padding: 10px 12px;
+}
+.formula-term {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px 8px; border-radius: 6px; font-size: 0.82rem;
+}
+.formula-term.term-positive { background: #eaf7f1; }
+.formula-term.term-negative { background: #fef0ef; }
+.term-sign { font-weight: 700; font-size: 0.78rem; color: #888; margin-right: 1px; }
+.term-value { font-weight: 700; }
+.formula-term.term-positive .term-value { color: #27ae60; }
+.formula-term.term-negative .term-value { color: #e74c3c; }
+.term-label {
+  font-size: 0.73rem; color: #888;
+  background: rgba(0,0,0,0.05); border-radius: 4px;
+  padding: 1px 5px; margin-left: 3px; white-space: nowrap;
+}
+.formula-eq { font-weight: 700; color: #aaa; font-size: 1rem; padding: 0 2px; }
+.formula-result { font-weight: 800; font-size: 0.92rem; }
+.formula-result.positive { color: #27ae60; }
+.formula-result.negative { color: #e74c3c; }
+.formula-none { font-size: 0.82rem; color: #bbb; }
 
 /* モーダル */
 .modal-overlay {

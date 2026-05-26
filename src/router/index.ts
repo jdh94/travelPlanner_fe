@@ -13,6 +13,7 @@ const router = createRouter({
       name: 'home',
       // HomeView は最初から読み込む（他のビューは遅延読み込み）。
       component: HomeView,
+      meta: { public: true },
     },
     {
       path: '/login',
@@ -66,6 +67,17 @@ const router = createRouter({
       path: '/travels',
       name: 'travels',
       component: () => import('../views/TravelListView.vue'),
+    },
+    {
+      path: '/account',
+      name: 'account',
+      component: () => import('../views/AccountView.vue'),
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../views/ForgotPasswordView.vue'),
+      meta: { public: true },
     },
   ],
 })

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useTripsStore } from '@/stores/trips'
 import { useAuthStore } from '@/stores/auth'
 
+const { locale } = useI18n()
 const router = useRouter()
 const tripsStore = useTripsStore()
 const auth = useAuthStore()
@@ -12,12 +14,25 @@ const step = ref(1)
 const creating = ref(false)
 const error = ref('')
 
+// 日付ユーティリティ: n日後の日付を YYYY-MM-DD 形式で返す。
+function dateAfter(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
+// ブラウザ言語に合わせてデフォルト通貨を決める。
+function defaultCurrency(): string {
+  if (locale.value === 'ko') return 'KRW'
+  return 'JPY'
+}
+
 const form = ref({
   title: '',
-  start_date: '',
-  end_date: '',
+  start_date: dateAfter(1),   // デフォルト: 明日
+  end_date: dateAfter(3),     // デフォルト: 3日後（2泊3日）
   description: '',
-  currency: 'JPY',
+  currency: defaultCurrency(), // デフォルト: 言語に合わせて自動設定
   visibility: 'public',
 })
 
@@ -64,9 +79,8 @@ async function submit() {
 
 const currencySymbol: Record<string, string> = { JPY: '¥', KRW: '₩', USD: '$' }
 const visibilityDesc: Record<string, string> = {
-  public: '誰でもURLでアクセス可能',
-  friends: '参加メンバーのみ',
-  private: '非公開（URLシェアは有効）',
+  public: 'URLを知っていれば誰でもアクセス可能',
+  private: 'PINコードを設定して入室を制限する',
 }
 </script>
 
@@ -129,11 +143,17 @@ const visibilityDesc: Record<string, string> = {
               <!-- for="start_date": label をクリックすると id="start_date" の input にフォーカスが移る。
                    showPicker(): フォーカスだけでなくカレンダーを確実に開く。 -->
               <label for="start_date" class="date-label" @click.prevent="($refs.startDate as HTMLInputElement).showPicker()">出発日 *</label>
-              <input id="start_date" ref="startDate" v-model="form.start_date" type="date" :min="today" @click="($event.target as HTMLInputElement).showPicker()" />
+              <div class="date-input-wrap">
+                <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <input id="start_date" ref="startDate" v-model="form.start_date" type="date" :min="today" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+              </div>
             </div>
             <div class="field">
               <label for="end_date" class="date-label" @click.prevent="($refs.endDate as HTMLInputElement).showPicker()">帰宅日 *</label>
-              <input id="end_date" ref="endDate" v-model="form.end_date" type="date" :min="form.start_date || today" @click="($event.target as HTMLInputElement).showPicker()" />
+              <div class="date-input-wrap">
+                <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <input id="end_date" ref="endDate" v-model="form.end_date" type="date" :min="form.start_date || today" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+              </div>
             </div>
           </div>
           <div v-if="nightCount > 0" class="night-badge">
@@ -170,17 +190,15 @@ const visibilityDesc: Record<string, string> = {
             <label>公開設定</label>
             <div class="visibility-options">
               <label
-                v-for="v in ['public', 'friends', 'private']"
+                v-for="v in ['public', 'private']"
                 :key="v"
                 class="visibility-option"
                 :class="{ selected: form.visibility === v }"
               >
                 <input type="radio" v-model="form.visibility" :value="v" hidden />
-                <div class="vis-icon">
-                  {{ v === 'public' ? '🌐' : v === 'friends' ? '👥' : '🔒' }}
-                </div>
+                <div class="vis-icon">{{ v === 'public' ? '🌐' : '🔒' }}</div>
                 <div>
-                  <p class="vis-label">{{ v === 'public' ? '公開' : v === 'friends' ? '友達のみ' : '非公開' }}</p>
+                  <p class="vis-label">{{ v === 'public' ? '公開' : '非公開（PIN保護）' }}</p>
                   <p class="vis-desc">{{ visibilityDesc[v] }}</p>
                 </div>
               </label>
@@ -193,7 +211,7 @@ const visibilityDesc: Record<string, string> = {
             <div class="summary-row"><span>タイトル</span><strong>{{ form.title }}</strong></div>
             <div class="summary-row"><span>日程</span><strong>{{ form.start_date }} 〜 {{ form.end_date }}（{{ nightCount }}泊{{ nightCount + 1 }}日）</strong></div>
             <div class="summary-row"><span>通貨</span><strong>{{ form.currency }}</strong></div>
-            <div class="summary-row"><span>公開設定</span><strong>{{ form.visibility === 'public' ? '公開' : form.visibility === 'friends' ? '友達のみ' : '非公開' }}</strong></div>
+            <div class="summary-row"><span>公開設定</span><strong>{{ form.visibility === 'public' ? '公開' : '非公開（PIN保護）' }}</strong></div>
           </div>
 
           <p v-if="error" class="error">{{ error }}</p>
@@ -307,7 +325,7 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 5px; font-weight: 500; }
 .date-label { cursor: pointer; user-select: none; }
 .date-label:hover { color: #42b983; }
-input[type="text"], input[type="date"], textarea {
+input[type="text"], textarea {
   width: 100%;
   padding: 11px 13px;
   border: 1.5px solid #e0e0e0;
@@ -317,6 +335,38 @@ input[type="text"], input[type="date"], textarea {
   transition: border-color 0.15s;
 }
 input:focus, textarea:focus { outline: none; border-color: #42b983; }
+.date-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-icon {
+  position: absolute;
+  right: 12px;
+  color: #42b983;
+  pointer-events: none;
+  z-index: 1;
+}
+.date-input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 9px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.date-input:focus { outline: none; border-color: #42b983; }
+.date-input:hover { border-color: #42b983; }
+.date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  width: 40px;
+  height: 100%;
+  cursor: pointer;
+}
 .char-count { position: absolute; right: 10px; bottom: 10px; font-size: 0.75rem; color: #bbb; }
 .field-error { color: #e74c3c; font-size: 0.82rem; margin-top: 4px; }
 
