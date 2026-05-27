@@ -38,8 +38,8 @@ const editSpotLoading = ref(false)
 const spotExpenses = ref<Record<string, Expense[]>>({})
 // showExpenseForm: スポットIDをキーに「費用追加フォームを表示するか」を管理する。
 const showExpenseForm = ref<Record<string, boolean>>({})
-// tripMembers: 支払者・参加者の選択肢に使う旅行メンバーリスト。
-const tripMembers = ref<TripMember[]>([])
+// tripMembers: ストアのtrip.membersを参照する（joinなどで更新されると自動反映）
+const tripMembers = computed<TripMember[]>(() => trip.value?.members ?? [])
 // expenseForm: スポットIDをキーに入力中のフォーム値を管理する。
 const expenseForm = ref<Record<string, {
   name: string; amount: string; currency: string; payer: number | null; participantIds: number[]
@@ -114,7 +114,7 @@ function openEditExpense(exp: Expense) {
   editingExpenseId.value = exp.id
   editExpenseForm.value = {
     name: exp.name,
-    amount: exp.amount,
+    amount: String(Math.floor(Number(exp.amount))),
     currency: exp.currency,
     payer: exp.payer,
     participantIds: [...exp.participant_ids],
@@ -154,9 +154,11 @@ function spotTotal(spotId: string): string {
 
 // 数字文字列をカンマ区切りで表示用にフォーマットする。内部値は数字のみで保持。
 function formatNumberDisplay(val: string): string {
-  const num = val.replace(/[^0-9]/g, '')
-  if (!num) return ''
-  return Number(num).toLocaleString('en-US')
+  if (!val) return ''
+  // 小数点付き文字列（"1000.00"）を整数に変換してからフォーマット
+  const num = Math.floor(Number(val))
+  if (isNaN(num)) return ''
+  return num.toLocaleString('en-US')
 }
 
 // トースト通知: 削除などの操作後に画面下部に一瞬表示するポップアップ。
@@ -178,10 +180,9 @@ function showToast(message: string) {
 const editingSpotId = ref<string | null>(null)
 const editForm = ref({
   name: '',
-  category: 'other' as Spot['category'],
   address: '',
+  visit_date: '',
   visit_time: '',
-  duration_min: '',
   memo: '',
   currency: '',
 })
@@ -227,10 +228,9 @@ function selectSpot(spotId: string) {
 
 const spotForm = ref({
   name: '',
-  category: 'other' as Spot['category'],
   address: '',
+  visit_date: '',
   visit_time: '',
-  duration_min: '',
   memo: '',
   currency: 'JPY',
 })
@@ -238,34 +238,21 @@ const spotForm = ref({
 function openAddSpot() {
   spotForm.value = {
     name: '',
-    category: 'other',
     address: '',
+    visit_date: '',
     visit_time: '',
-    duration_min: '',
     memo: '',
     currency: trip.value?.currency ?? 'JPY',
   }
   showAddSpot.value = true
 }
 
-const categoryLabels = computed<Record<string, string>>(() => ({
-  restaurant: t('tripDetail.category_restaurant'),
-  attraction: t('tripDetail.category_attraction'),
-  accommodation: t('tripDetail.category_accommodation'),
-  transport: t('tripDetail.category_transport'),
-  other: t('tripDetail.category_other'),
-}))
-
 // onMounted: コンポーネントが DOM にマウントされた直後に実行される。
 // ここで API からデータを取得するのが一般的なパターン。
 onMounted(async () => {
   try {
-    // 旅行データとメンバーリストを並行取得する。
-    const [, memRes] = await Promise.all([
-      tripsStore.fetchTrip(hashUrl),
-      membersApi.list(hashUrl),
-    ])
-    tripMembers.value = memRes.data
+    // 旅行データを取得する（メンバーはtripデータに含まれる）。
+    await tripsStore.fetchTrip(hashUrl)
     // 全スポットの費用を一括ロード（クリック不要で表示）
     const spots = tripsStore.currentTrip?.spots ?? []
     await Promise.all(spots.map(s => loadSpotExpenses(s.id)))
@@ -287,12 +274,12 @@ async function addSpot() {
     const spot = await tripsStore.addSpot(hashUrl, {
       ...spotForm.value,
       // 空文字の場合は undefined にして API に送らない（DBで null になる）。
-      duration_min: spotForm.value.duration_min ? Number(spotForm.value.duration_min) : undefined,
+      visit_date: spotForm.value.visit_date || undefined,
       visit_time: spotForm.value.visit_time || undefined,
     })
     selectedSpotId.value = spot.id
     showAddSpot.value = false
-    spotForm.value = { name: '', category: 'other', address: '', visit_time: '', duration_min: '', memo: '', currency: trip.value?.currency ?? 'JPY' }
+    spotForm.value = { name: '', address: '', visit_date: '', visit_time: '', memo: '', currency: trip.value?.currency ?? 'JPY' }
     loadSpotExpenses(spot.id)
   } catch (e: any) {
     // DRF のバリデーションエラーは { field: ["エラーメッセージ"] } 形式で返ってくる。
@@ -314,10 +301,9 @@ function openEdit(spot: Spot) {
   editingSpotId.value = spot.id
   editForm.value = {
     name: spot.name,
-    category: spot.category,
     address: spot.address ?? '',
+    visit_date: spot.visit_date ?? '',
     visit_time: spot.visit_time ?? '',
-    duration_min: spot.duration_min ? String(spot.duration_min) : '',
     memo: spot.memo ?? '',
     currency: spot.currency || trip.value?.currency || 'JPY',
   }
@@ -332,7 +318,7 @@ async function saveEdit() {
   try {
     await tripsStore.updateSpot(editingSpotId.value, {
       ...editForm.value,
-      duration_min: editForm.value.duration_min ? Number(editForm.value.duration_min) : undefined,
+      visit_date: editForm.value.visit_date || undefined,
       visit_time: editForm.value.visit_time || undefined,
     })
     showEditSpot.value = false
@@ -459,11 +445,13 @@ function formatDate(date: string) {
         >
           <div class="spot-header">
             <div class="spot-left">
-              <span class="category-badge">{{ categoryLabels[spot.category] }}</span>
               <div class="spot-info">
                 <strong>{{ spot.name }}</strong>
                 <p v-if="spot.address" class="spot-address">{{ spot.address }}</p>
-                <p v-if="spot.visit_time" class="spot-time">🕐 {{ spot.visit_time }}{{ spot.duration_min ? ` (${spot.duration_min}${t('tripDetail.minuteUnit')})` : '' }}</p>
+                <div class="spot-time-row">
+                  <span v-if="spot.visit_date" class="spot-date">📅 {{ spot.visit_date }}</span>
+                  <span v-if="spot.visit_time" class="spot-time">🕐 {{ spot.visit_time }}</span>
+                </div>
               </div>
             </div>
             <div class="spot-actions">
@@ -660,36 +648,18 @@ function formatDate(date: string) {
           <input v-model="spotForm.name" :placeholder="t('tripDetail.spotNamePlaceholder')" required />
         </div>
         <div class="field">
-          <label>{{ t('tripDetail.category') }}</label>
-          <select v-model="spotForm.category">
-            <option value="restaurant">{{ t('tripDetail.category_restaurant') }}</option>
-            <option value="attraction">{{ t('tripDetail.category_attraction') }}</option>
-            <option value="accommodation">{{ t('tripDetail.category_accommodation') }}</option>
-            <option value="transport">{{ t('tripDetail.category_transport') }}</option>
-            <option value="other">{{ t('tripDetail.category_other') }}</option>
-          </select>
-        </div>
-        <div class="field">
           <label>{{ t('tripDetail.address') }}</label>
           <input v-model="spotForm.address" :placeholder="t('tripDetail.addressPlaceholder')" />
         </div>
         <div class="field-row">
           <div class="field">
+            <label>📅 日付</label>
+            <input v-model="spotForm.visit_date" type="date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input-spot" />
+          </div>
+          <div class="field">
             <label>{{ t('tripDetail.visitTime') }}</label>
             <input v-model="spotForm.visit_time" type="time" />
           </div>
-          <div class="field">
-            <label>{{ t('tripDetail.duration') }}</label>
-            <input v-model="spotForm.duration_min" type="tel" inputmode="numeric" placeholder="60" @input="spotForm.duration_min = (spotForm.duration_min as any).toString().replace(/[^0-9]/g, '') as any" @compositionend="spotForm.duration_min = (spotForm.duration_min as any).toString().replace(/[^0-9]/g, '') as any" />
-          </div>
-        </div>
-        <div class="field">
-          <label>{{ t('tripDetail.spotCurrency') }}</label>
-          <select v-model="spotForm.currency">
-            <option value="JPY">{{ t('common.currency.JPY') }}</option>
-            <option value="KRW">{{ t('common.currency.KRW') }}</option>
-            <option value="USD">{{ t('common.currency.USD') }}</option>
-          </select>
         </div>
         <div class="field">
           <label>{{ t('tripDetail.memo') }}</label>
@@ -714,36 +684,18 @@ function formatDate(date: string) {
           <input v-model="editForm.name" :placeholder="t('tripDetail.spotNamePlaceholder')" required />
         </div>
         <div class="field">
-          <label>{{ t('tripDetail.category') }}</label>
-          <select v-model="editForm.category">
-            <option value="restaurant">{{ t('tripDetail.category_restaurant') }}</option>
-            <option value="attraction">{{ t('tripDetail.category_attraction') }}</option>
-            <option value="accommodation">{{ t('tripDetail.category_accommodation') }}</option>
-            <option value="transport">{{ t('tripDetail.category_transport') }}</option>
-            <option value="other">{{ t('tripDetail.category_other') }}</option>
-          </select>
-        </div>
-        <div class="field">
           <label>{{ t('tripDetail.address') }}</label>
           <input v-model="editForm.address" :placeholder="t('tripDetail.addressPlaceholder')" />
         </div>
         <div class="field-row">
           <div class="field">
+            <label>📅 日付</label>
+            <input v-model="editForm.visit_date" type="date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input-spot" />
+          </div>
+          <div class="field">
             <label>{{ t('tripDetail.visitTime') }}</label>
             <input v-model="editForm.visit_time" type="time" />
           </div>
-          <div class="field">
-            <label>{{ t('tripDetail.duration') }}</label>
-            <input v-model="editForm.duration_min" type="tel" inputmode="numeric" placeholder="60" @input="editForm.duration_min = (editForm.duration_min as any).toString().replace(/[^0-9]/g, '') as any" @compositionend="editForm.duration_min = (editForm.duration_min as any).toString().replace(/[^0-9]/g, '') as any" />
-          </div>
-        </div>
-        <div class="field">
-          <label>{{ t('tripDetail.spotCurrency') }}</label>
-          <select v-model="editForm.currency">
-            <option value="JPY">{{ t('common.currency.JPY') }}</option>
-            <option value="KRW">{{ t('common.currency.KRW') }}</option>
-            <option value="USD">{{ t('common.currency.USD') }}</option>
-          </select>
         </div>
         <div class="field">
           <label>{{ t('tripDetail.memo') }}</label>
@@ -874,7 +826,16 @@ function formatDate(date: string) {
 .spot-info { flex: 1; min-width: 0; }
 .category-badge { font-size: 0.85rem; white-space: nowrap; padding-top: 1px; flex-shrink: 0; }
 .spot-info strong { font-size: 0.95rem; color: #2c3e50; display: block; }
-.spot-address, .spot-time { margin: 2px 0 0; font-size: 0.78rem; color: #888; }
+.spot-address { margin: 2px 0 0; font-size: 0.78rem; color: #888; }
+.spot-time-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; }
+.spot-date { font-size: 0.78rem; color: #42b983; font-weight: 500; }
+.spot-time { font-size: 0.78rem; color: #888; }
+.date-input-spot {
+  width: 100%; padding: 9px 11px; border: 1px solid #ddd;
+  border-radius: 8px; font-size: 0.9rem; box-sizing: border-box;
+  cursor: pointer;
+}
+.date-input-spot:focus { outline: none; border-color: #42b983; }
 .spot-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .btn-action-edit {
   background: #f4f9ff; border: 1px solid #b8d4f0; color: #4a90d9;

@@ -34,9 +34,10 @@ const form = ref({
   description: '',
   currency: defaultCurrency(), // デフォルト: 言語に合わせて自動設定
   visibility: 'public',
+  pin: '',
+  pin_enabled: false,
 })
 
-const today = new Date().toISOString().split('T')[0]
 
 const nightCount = computed(() => {
   if (!form.value.start_date || !form.value.end_date) return 0
@@ -46,6 +47,7 @@ const nightCount = computed(() => {
 
 const step1Valid = computed(() => !!form.value.title.trim())
 const step2Valid = computed(() => !!form.value.start_date && !!form.value.end_date && form.value.end_date >= form.value.start_date)
+const step3Valid = computed(() => form.value.visibility === 'public' || (form.value.visibility === 'private' && form.value.pin.length === 4))
 
 function nextStep() {
   if (step.value === 1 && step1Valid.value) step.value = 2
@@ -57,10 +59,15 @@ function prevStep() {
 }
 
 async function submit() {
+  if (!step3Valid.value) return
   error.value = ''
   creating.value = true
   try {
-    const trip = await tripsStore.createTrip(form.value)
+    const payload = {
+      ...form.value,
+      pin_enabled: form.value.visibility === 'private',
+    }
+    const trip = await tripsStore.createTrip(payload)
     router.push(`/trips/${trip.hash_url}`)
   } catch (e: any) {
     const data = e.response?.data
@@ -145,14 +152,14 @@ const visibilityDesc: Record<string, string> = {
               <label for="start_date" class="date-label" @click.prevent="($refs.startDate as HTMLInputElement).showPicker()">出発日 *</label>
               <div class="date-input-wrap">
                 <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <input id="start_date" ref="startDate" v-model="form.start_date" type="date" :min="today" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+                <input id="start_date" ref="startDate" v-model="form.start_date" type="date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
               </div>
             </div>
             <div class="field">
               <label for="end_date" class="date-label" @click.prevent="($refs.endDate as HTMLInputElement).showPicker()">帰宅日 *</label>
               <div class="date-input-wrap">
                 <svg class="date-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <input id="end_date" ref="endDate" v-model="form.end_date" type="date" :min="form.start_date || today" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
+                <input id="end_date" ref="endDate" v-model="form.end_date" type="date" :min="form.start_date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input" />
               </div>
             </div>
           </div>
@@ -194,6 +201,7 @@ const visibilityDesc: Record<string, string> = {
                 :key="v"
                 class="visibility-option"
                 :class="{ selected: form.visibility === v }"
+                @click="form.visibility = v; if (v === 'public') form.pin = ''"
               >
                 <input type="radio" v-model="form.visibility" :value="v" hidden />
                 <div class="vis-icon">{{ v === 'public' ? '🌐' : '🔒' }}</div>
@@ -202,6 +210,26 @@ const visibilityDesc: Record<string, string> = {
                   <p class="vis-desc">{{ visibilityDesc[v] }}</p>
                 </div>
               </label>
+            </div>
+          </div>
+
+          <!-- 非公開選択時：PIN入力（必須） -->
+          <div v-if="form.visibility === 'private'" class="field pin-field">
+            <label>🔒 PINコード <span class="required">*必須</span></label>
+            <p class="pin-desc">旅行を開く際にこの4桁のPINが必要になります。</p>
+            <div class="pin-input-row">
+              <input
+                v-model="form.pin"
+                type="tel"
+                inputmode="numeric"
+                maxlength="4"
+                placeholder="4桁のPINを入力"
+                class="pin-number-input"
+                @input="form.pin = ($event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 4)"
+                @compositionend="form.pin = ($event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 4)"
+              />
+              <span v-if="form.pin.length === 4" class="pin-ok">✓</span>
+              <span v-else class="pin-remain">あと{{ 4 - form.pin.length }}桁</span>
             </div>
           </div>
 
@@ -232,7 +260,7 @@ const visibilityDesc: Record<string, string> = {
           <button
             v-else
             class="btn-primary btn-create"
-            :disabled="creating"
+            :disabled="creating || !step3Valid"
             @click="submit"
           >
             {{ creating ? '作成中...' : '旅行を作成する 🎉' }}
@@ -369,6 +397,24 @@ input:focus, textarea:focus { outline: none; border-color: #42b983; }
 }
 .char-count { position: absolute; right: 10px; bottom: 10px; font-size: 0.75rem; color: #bbb; }
 .field-error { color: #e74c3c; font-size: 0.82rem; margin-top: 4px; }
+.required { color: #e74c3c; font-size: 0.8rem; font-weight: 600; margin-left: 4px; }
+
+/* PIN入力 */
+.pin-field {
+  border: 1.5px solid #b8e0cc; border-radius: 10px;
+  padding: 14px 16px; background: #f4faf7;
+}
+.pin-desc { font-size: 0.82rem; color: #888; margin: 4px 0 12px; }
+.pin-input-row { display: flex; align-items: center; gap: 10px; }
+.pin-number-input {
+  width: 140px; padding: 10px 12px;
+  border: 1.5px solid #42b983; border-radius: 8px;
+  font-size: 1.1rem; letter-spacing: 0.2em; text-align: center;
+  box-sizing: border-box;
+}
+.pin-number-input:focus { outline: none; border-color: #369870; box-shadow: 0 0 0 3px rgba(66,185,131,0.15); }
+.pin-ok { color: #42b983; font-size: 1.1rem; font-weight: 700; }
+.pin-remain { font-size: 0.8rem; color: #aaa; }
 
 .night-badge {
   display: inline-block;

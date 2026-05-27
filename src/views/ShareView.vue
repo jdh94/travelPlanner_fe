@@ -134,11 +134,50 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
 .card h2 { margin: 0 0 16px; font-size: 1rem; color: #2c3e50; }
 
-.url-box { display: flex; gap: 8px; margin-bottom: 16px; }
-.url-input { flex: 1; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.85rem; color: #555; background: #f9f9f9; }
+/* URL コピー行 */
+.url-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: center;
+  min-width: 0;
+}
+.url-input {
+  flex: 1;
+  min-width: 0;           /* flex子要素がoverflowしないように */
+  padding: 9px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #555;
+  background: #f9f9f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
 
-.sns-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
-.sns-btn { padding: 9px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: bold; color: #fff; }
+/* SNS ボタン群 */
+.sns-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.sns-btn {
+  padding: 9px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: bold;
+  color: #fff;
+  /* Android ブラウザ対応 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-appearance: none;
+  appearance: none;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
 .sns-btn.line { background: #06c755; }
 .sns-btn.instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
 .sns-btn.kakao { background: #fee500; color: #000; }
@@ -147,7 +186,16 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .pin-toggle { margin-bottom: 12px; }
 .toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; }
 .pin-input-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.pin-field { width: 120px; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1.1rem; text-align: center; letter-spacing: 4px; }
+.pin-field {
+  width: 120px;
+  padding: 9px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  text-align: center;
+  letter-spacing: 0.2em;
+  box-sizing: border-box;
+}
 .pin-hint { font-size: 0.8rem; color: #aaa; }
 
 .no-members { color: #aaa; font-size: 0.9rem; }
@@ -155,7 +203,26 @@ h1 { margin: 0; font-size: 1.1rem; color: #2c3e50; }
 .member-name { font-size: 0.9rem; color: #333; }
 .member-role { font-size: 0.8rem; color: #42b983; }
 
-.btn-primary { background: #42b983; color: #fff; border: none; padding: 9px 20px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+/* ボタン共通: Android ブラウザでテキスト・形が崩れないよう明示的に指定 */
+.btn-primary {
+  background: #42b983;
+  color: #fff;
+  border: none;
+  padding: 9px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  /* クロスブラウザ対応 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-appearance: none;
+  appearance: none;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
 .btn-primary:hover { background: #369870; }
 .btn-primary:disabled { background: #a0d9bf; cursor: not-allowed; }
 </style>

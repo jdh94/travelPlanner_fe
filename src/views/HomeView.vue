@@ -139,14 +139,16 @@ function visibilityLabel(v: string) {
 .header-inner {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 0 24px;
-  height: 60px;
+  padding: 0 16px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
-.logo { font-size: 1.4rem; color: #42b983; margin: 0; text-decoration: none; font-weight: 700; }
-.nav { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 1.4rem; color: #42b983; margin: 0; text-decoration: none; font-weight: 700; flex-shrink: 0; }
+.nav { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .user-chip {
   display: flex; align-items: center; gap: 6px;
   background: #f5f5f5; border-radius: 20px;
@@ -300,21 +302,31 @@ function visibilityLabel(v: string) {
 .btn-primary {
   background: #42b983; color: #fff; border: none;
   padding: 9px 20px; border-radius: 8px; cursor: pointer;
-  font-size: 0.9rem; text-decoration: none; display: inline-block;
-  font-weight: 500;
+  font-size: 0.9rem; text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 500; box-sizing: border-box;
+  -webkit-appearance: none; appearance: none;
+  line-height: 1.2; white-space: nowrap;
 }
 .btn-primary:hover { background: #369870; }
 .btn-primary.btn-large { padding: 14px 36px; font-size: 1rem; border-radius: 10px; }
 .btn-outline {
-  background: transparent; color: #42b983; border: 1px solid #42b983;
+  background: transparent; color: #42b983; border: 1.5px solid #42b983;
   padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
-  text-decoration: none; display: inline-block;
+  text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; -webkit-appearance: none; appearance: none;
+  line-height: 1.2; white-space: nowrap;
 }
 .btn-outline:hover { background: #f0faf6; }
 .btn-secondary {
   background: #fff; color: #42b983; border: 2px solid #42b983;
   padding: 9px 20px; border-radius: 10px; cursor: pointer; font-size: 1rem;
-  text-decoration: none; display: inline-block; font-weight: 500;
+  text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 500; box-sizing: border-box;
+  -webkit-appearance: none; appearance: none;
+  line-height: 1.2; white-space: nowrap;
 }
 .btn-secondary:hover { background: #42b983; color: #fff; }
 .btn-secondary.btn-large { padding: 14px 36px; }
