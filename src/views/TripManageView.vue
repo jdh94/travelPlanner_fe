@@ -31,6 +31,7 @@ const form = ref({
   pin: '',
 })
 const showPinSaved = ref(false)
+const showPinInput = ref(false)
 
 // computed: trip と auth.user の両方が揃っていて、かつ creator が一致する場合に true。
 // trip や auth.user が変わると自動で再計算される。
@@ -78,14 +79,12 @@ async function saveTrip() {
     // PATCH リクエスト: 変更したフィールドだけを送る部分更新。
     const { data } = await tripsApi.update(hashUrl, payload)
     trip.value = data
-    saveSuccess.value = true
-    if (form.value.pin_enabled && form.value.pin) {
-      // PIN設定完了トースト通知を4秒間表示する。
-      showPinSaved.value = true
-      // setTimeout: 指定ミリ秒後に処理を実行する非同期タイマー。
-      setTimeout(() => (showPinSaved.value = false), 4000)
-    }
+    // PIN変更時もそれ以外も、常にトーストで成功を通知する
+    showPinSaved.value = true
+    setTimeout(() => (showPinSaved.value = false), 3000)
     form.value.pin = ''
+    showPinInput.value = false
+    saveSuccess.value = true
     setTimeout(() => (saveSuccess.value = false), 3000)
   } finally {
     saving.value = false
@@ -118,7 +117,7 @@ async function deleteTrip() {
     <transition name="toast">
       <!-- v-if="showPinSaved": true のとき DOM に追加、false のとき削除。transition が動く。 -->
       <div v-if="showPinSaved" class="toast">
-        🔒 PINを設定しました。次回からこのURLを開く時にPIN入力が必要です。
+        ✓ 変更を保存しました
       </div>
     </transition>
 
@@ -171,7 +170,7 @@ async function deleteTrip() {
               <button
                 type="button"
                 :class="['group-btn', { active: form.visibility === 'public' }]"
-                @click="form.visibility = 'public'; form.pin_enabled = false"
+                @click="form.visibility = 'public'; form.pin_enabled = false; showPinInput = false; form.pin = ''"
               >🌐 公開</button>
               <button
                 type="button"
@@ -181,22 +180,29 @@ async function deleteTrip() {
             </div>
           </div>
 
-          <!-- 非公開選択時のみPIN入力欄を表示 -->
+          <!-- 非公開選択時のみPIN設定欄を表示 -->
           <div v-if="form.visibility === 'private'" class="field pin-field">
             <label>🔒 PINコード</label>
-            <p class="pin-hint">旅行を開く際にこのPINの入力が必要になります。</p>
-            <div class="pin-input-row">
-              <input
-                v-model="form.pin"
-                type="tel"
-                inputmode="numeric"
-                maxlength="4"
-                placeholder="4桁のPINを入力"
-                class="pin-number-input"
-                @input="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
-                @compositionend="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
-              />
-              <span class="pin-input-hint">空欄の場合は現在のPINを維持</span>
+            <div v-if="!showPinInput" class="pin-locked-row">
+              <span class="pin-locked-dots">● ● ● ●</span>
+              <button type="button" class="btn-change-pin" @click="showPinInput = true">PINを変更する</button>
+            </div>
+            <div v-else>
+              <p class="pin-hint">新しい4桁のPINを入力してください。</p>
+              <div class="pin-input-row">
+                <input
+                  v-model="form.pin"
+                  type="tel"
+                  inputmode="numeric"
+                  maxlength="4"
+                  placeholder="新しいPIN"
+                  class="pin-number-input"
+                  autofocus
+                  @input="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
+                  @compositionend="form.pin = form.pin.replace(/\D/g, '').slice(0, 4)"
+                />
+                <button type="button" class="btn-pin-cancel" @click="showPinInput = false; form.pin = ''">キャンセル</button>
+              </div>
             </div>
           </div>
 
@@ -358,14 +364,27 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: #42b983
   background: #f4faf7;
 }
 .pin-hint { font-size: 0.82rem; color: #888; margin: 4px 0 12px; }
+.pin-locked-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.pin-locked-dots { font-size: 0.75rem; color: #aaa; letter-spacing: 0.3em; }
+.btn-change-pin {
+  background: #f4f9ff; border: 1px solid #b8d4f0; color: #4a90d9;
+  font-size: 0.82rem; font-weight: 500; padding: 5px 12px;
+  border-radius: 6px; cursor: pointer; transition: background 0.15s;
+}
+.btn-change-pin:hover { background: #4a90d9; border-color: #4a90d9; color: #fff; }
+.btn-pin-cancel {
+  background: #f5f5f5; border: none; color: #888;
+  font-size: 0.82rem; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+}
+.btn-pin-cancel:hover { background: #eee; }
 .pin-input-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pin-number-input {
-  width: 160px;
-  padding: 10px 14px;
+  width: 140px;
+  padding: 10px 12px;
   border: 1.5px solid #42b983;
   border-radius: 8px;
-  font-size: 1.2rem;
-  letter-spacing: 0.4em;
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
   text-align: center;
 }
 .pin-input-hint { font-size: 0.78rem; color: #aaa; }

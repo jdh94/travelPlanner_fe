@@ -48,7 +48,10 @@
         <span class="scope-label">
           {{ selectedSpotId === null ? '🌐 旅行全体' : '📍 ' + selectedSpotName }}
         </span>
-        <span class="scope-total">合計 {{ currentTotal }} 円</span>
+        <span class="scope-total">
+          合計 {{ currentTotal }} {{ trip?.currency }}
+          <span v-if="hasMixedCurrencies" class="rate-note">※概算レート換算</span>
+        </span>
         <button class="add-btn" @click="openAddModal">{{ t('expense.addExpense') }}</button>
       </div>
 
@@ -159,7 +162,12 @@
                   >
                     <span class="term-sign">{{ item.amount >= 0 ? (idx === 0 ? '' : '+') : '−' }}</span>
                     <span class="term-value">{{ Math.abs(item.amount).toLocaleString() }}</span>
-                    <span class="term-label">{{ item.name }}</span>
+                    <span class="term-label">
+                      {{ item.name }}
+                      <span v-if="item.originalCurrency" class="term-orig-currency">
+                        ({{ item.originalCurrency }})
+                      </span>
+                    </span>
                   </span>
                 </template>
                 <span v-if="person.items.length === 0" class="formula-none">参加費用なし</span>
@@ -276,6 +284,19 @@ const route = useRoute()
 const router = useRouter()
 const hashUrl = route.params.hashUrl as string
 
+// --- 為替レート（概算）---
+// バックエンドの _EXCHANGE_RATES と同じ値を使う。
+const EXCHANGE_RATES: Record<string, Record<string, number>> = {
+  JPY: { JPY: 1,     KRW: 9.5,    USD: 0.0067  },
+  KRW: { JPY: 0.105, KRW: 1,      USD: 0.00070 },
+  USD: { JPY: 149,   KRW: 1430,   USD: 1       },
+}
+function convertAmount(amount: number, from: string, to: string): number {
+  if (from === to) return amount
+  const rate = EXCHANGE_RATES[from]?.[to] ?? 1
+  return amount * rate
+}
+
 // --- 状態 ---
 const activeTab = ref<'expenses' | 'settlement'>('expenses')
 const expenses = ref<Expense[]>([])
@@ -309,10 +330,20 @@ const filteredExpenses = computed(() => {
   return expenses.value.filter(e => e.spot === selectedSpotId.value)
 })
 
-// 現在表示中の費用の合計金額。
+// 表示中の費用に複数通貨が混在しているか（概算レート換算の注釈表示用）。
+const hasMixedCurrencies = computed(() => {
+  if (!trip.value) return false
+  return filteredExpenses.value.some(e => e.currency !== trip.value!.currency)
+})
+
+// 現在表示中の費用の合計金額（旅行のデフォルト通貨に変換して合計）。
 const currentTotal = computed(() => {
-  const sum = filteredExpenses.value.reduce((acc, e) => acc + Number(e.amount), 0)
-  return sum.toLocaleString()
+  if (!trip.value) return '0'
+  const tripCurrency = trip.value.currency
+  const sum = filteredExpenses.value.reduce((acc, e) => {
+    return acc + convertAmount(Number(e.amount), e.currency, tripCurrency)
+  }, 0)
+  return Math.round(sum).toLocaleString()
 })
 
 // --- フォーム ---
@@ -384,19 +415,30 @@ function getMemberName(id: number): string {
 }
 
 // メンバーごとに各費用の貢献額を計算する。
-// 支払者: +（総額 − 自分の取り分）= 他の参加者から回収すべき金額
-// 非支払者: −自分の取り分 = 支払者に返すべき金額
+// すべて旅行のデフォルト通貨に変換してから計算する（バックエンドの精算計算と一致させる）。
+// 支払者: +（変換後総額 − 自分の取り分）= 他の参加者から回収すべき金額
+// 非支払者: −変換後の自分の取り分 = 支払者に返すべき金額
 const personBreakdown = computed(() => {
-  if (!settlementResult.value) return []
+  if (!settlementResult.value || !trip.value) return []
+  const tripCurrency = trip.value.currency
   return settlementResult.value.balance_summary.map(b => {
-    const items: { name: string; amount: number; currency: string }[] = []
+    const items: { name: string; amount: number; currency: string; originalAmount?: number; originalCurrency?: string }[] = []
     expenses.value.forEach(exp => {
       if (!exp.participant_ids.includes(b.member_id)) return
-      const share = Math.round(Number(exp.amount) / exp.participant_ids.length)
+      const rawAmount = Number(exp.amount)
+      const converted = Math.round(convertAmount(rawAmount, exp.currency, tripCurrency))
+      const share = Math.round(converted / exp.participant_ids.length)
       const net = exp.payer === b.member_id
-        ? Math.round(Number(exp.amount)) - share  // 立替分（自分の取り分を除く）
-        : -share                                   // 負担分（返す金額）
-      items.push({ name: exp.name, amount: net, currency: exp.currency })
+        ? converted - share   // 立替分（自分の取り分を除く）
+        : -share              // 負担分（返す金額）
+      items.push({
+        name: exp.name,
+        amount: net,
+        currency: tripCurrency,
+        // 元の通貨が異なる場合、元の金額も保持して表示に使う
+        originalAmount: exp.currency !== tripCurrency ? rawAmount : undefined,
+        originalCurrency: exp.currency !== tripCurrency ? exp.currency : undefined,
+      })
     })
     return { ...b, items }
   })
@@ -589,21 +631,33 @@ async function switchToSettlement() {
 .current-scope-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 0 12px;
   border-bottom: 1px solid #f0f0f0;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .scope-label {
   font-size: 0.95rem;
   font-weight: 700;
   color: #2c3e50;
   flex: 1;
+  min-width: 60px;
 }
 .scope-total {
   font-size: 0.85rem;
   color: #42b983;
   font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.rate-note {
+  font-size: 0.65rem;
+  color: #bbb;
+  font-weight: 400;
 }
 .add-btn {
   background: #42b983;
@@ -615,6 +669,15 @@ async function switchToSettlement() {
   cursor: pointer;
   transition: background 0.2s;
   white-space: nowrap;
+  flex-shrink: 0;
+  /* Android ブラウザ対応 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-appearance: none;
+  appearance: none;
+  line-height: 1.2;
+  box-sizing: border-box;
 }
 .add-btn:hover { background: #369f73; }
 
@@ -771,6 +834,11 @@ async function switchToSettlement() {
   font-size: 0.73rem; color: #888;
   background: rgba(0,0,0,0.05); border-radius: 4px;
   padding: 1px 5px; margin-left: 3px; white-space: nowrap;
+}
+.term-orig-currency {
+  font-size: 0.68rem;
+  color: #bbb;
+  margin-left: 2px;
 }
 .formula-eq { font-weight: 700; color: #aaa; font-size: 1rem; padding: 0 2px; }
 .formula-result { font-weight: 800; font-size: 0.92rem; }

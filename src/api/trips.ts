@@ -39,10 +39,10 @@ export interface Spot {
   id: string
   name: string
   place_id: string
-  category: 'restaurant' | 'attraction' | 'accommodation' | 'transport' | 'other'
   address: string
   latitude: number | null
   longitude: number | null
+  visit_date: string | null
   visit_time: string | null
   duration_min: number | null
   memo: string
