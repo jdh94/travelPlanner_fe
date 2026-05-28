@@ -654,7 +654,15 @@ function formatDate(date: string) {
         <div class="field-row">
           <div class="field">
             <label>📅 日付</label>
-            <input v-model="spotForm.visit_date" type="date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input-spot" />
+            <div class="date-input-wrap">
+              <input v-model="spotForm.visit_date" type="date" class="date-input-spot" />
+              <svg class="cal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"
+                @click="(($event.currentTarget as SVGElement).previousElementSibling as HTMLInputElement).showPicker()">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
           </div>
           <div class="field">
             <label>{{ t('tripDetail.visitTime') }}</label>
@@ -690,7 +698,15 @@ function formatDate(date: string) {
         <div class="field-row">
           <div class="field">
             <label>📅 日付</label>
-            <input v-model="editForm.visit_date" type="date" @click="($event.target as HTMLInputElement).showPicker()" class="date-input-spot" />
+            <div class="date-input-wrap">
+              <input v-model="editForm.visit_date" type="date" class="date-input-spot" />
+              <svg class="cal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"
+                @click="(($event.currentTarget as SVGElement).previousElementSibling as HTMLInputElement).showPicker()">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
           </div>
           <div class="field">
             <label>{{ t('tripDetail.visitTime') }}</label>
@@ -830,12 +846,36 @@ function formatDate(date: string) {
 .spot-time-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; }
 .spot-date { font-size: 0.78rem; color: #42b983; font-weight: 500; }
 .spot-time { font-size: 0.78rem; color: #888; }
-.date-input-spot {
-  width: 100%; padding: 9px 11px; border: 1px solid #ddd;
-  border-radius: 8px; font-size: 0.9rem; box-sizing: border-box;
-  cursor: pointer;
+.date-input-wrap {
+  position: relative;
+  width: 100%;
 }
+.date-input-spot {
+  width: 100%;
+  padding: 9px 36px 9px 11px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  cursor: pointer;
+  background: #fff;
+  /* ネイティブのカレンダーアイコンを非表示 */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.date-input-spot::-webkit-calendar-picker-indicator { opacity: 0; width: 0; }
 .date-input-spot:focus { outline: none; border-color: #42b983; }
+.cal-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: #42b983;
+  cursor: pointer;
+  pointer-events: all;
+}
 .spot-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .btn-action-edit {
   background: #f4f9ff; border: 1px solid #b8d4f0; color: #4a90d9;
